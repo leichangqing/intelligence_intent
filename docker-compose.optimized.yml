@@ -1,0 +1,523 @@
+# ============================================================================
+# 优化的Docker Compose配置 - TASK-054
+# 生产级部署配置，包含完整的服务栈和优化设置
+# ============================================================================
+
+version: '3.8'
+
+# ============================================================================
+# 服务定义
+# ============================================================================
+services:
+  # ============================================================================
+  # 主应用服务
+  # ============================================================================
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.optimized
+      target: production
+      args:
+        - BUILD_ENV=production
+    image: intent-recognition:latest
+    container_name: intent_app
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    environment:
+      # 数据库配置
+      - DATABASE_HOST=mysql
+      - DATABASE_PORT=3306
+      - DATABASE_NAME=${DATABASE_NAME:-intent_recognition_system}
+      - DATABASE_USER=${DATABASE_USER:-intent_user}
+      - DATABASE_PASSWORD=${DATABASE_PASSWORD:-root123}
+      
+      # Redis配置
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      
+      # 应用配置
+      - APP_ENV=production
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - SECRET_KEY=${SECRET_KEY:-your-secret-key-here}
+      
+      # 性能配置
+      - MAX_WORKERS=${MAX_WORKERS:-4}
+      - MAX_CONCURRENT_REQUESTS=${MAX_CONCURRENT_REQUESTS:-1000}
+      
+      # 监控配置
+      - PROMETHEUS_ENABLED=true
+      - PROMETHEUS_PORT=9091
+    
+    volumes:
+      # 日志持久化
+      - app_logs:/app/logs
+      # 数据持久化
+      - app_data:/app/data
+      # 临时文件
+      - app_tmp:/app/tmp:rw
+      # 只读配置文件
+      - ./.env:/app/.env:ro
+    
+    networks:
+      - intent_network
+      - monitoring_network
+    
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    
+    restart: unless-stopped
+    
+    # 资源限制
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+    
+    # 健康检查
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    
+    # 日志配置
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    
+    # 安全配置
+    security_opt:
+      - no-new-privileges:true
+    
+    # 只读根文件系统（除了指定的可写目录）
+    read_only: true
+    
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=100m
+
+  # ============================================================================
+  # MySQL数据库服务
+  # ============================================================================
+  mysql:
+    image: mysql:8.0
+    container_name: intent_mysql
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DATABASE_ROOT_PASSWORD:-root123}
+      MYSQL_DATABASE: ${DATABASE_NAME:-intent_recognition_system}
+      MYSQL_USER: ${DATABASE_USER:-intent_user}
+      MYSQL_PASSWORD: ${DATABASE_PASSWORD:-root123}
+      MYSQL_CHARSET: utf8mb4
+      MYSQL_COLLATION: utf8mb4_unicode_ci
+    
+    volumes:
+      # 数据持久化
+      - mysql_data:/var/lib/mysql
+      # 初始化脚本
+      - ./docs/design/mysql_schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./scripts/init_database.sql:/docker-entrypoint-initdb.d/02-data.sql:ro
+      # MySQL配置
+      - ./docker/mysql/my.cnf:/etc/mysql/conf.d/custom.cnf:ro
+      # 日志
+      - mysql_logs:/var/log/mysql
+    
+    networks:
+      - intent_network
+    
+    restart: unless-stopped
+    
+    # 资源限制
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+    
+    # MySQL优化配置
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --default-authentication-plugin=mysql_native_password
+      --innodb-buffer-pool-size=512M
+      --innodb-log-file-size=128M
+      --max-connections=200
+      --query-cache-size=64M
+      --slow-query-log=1
+      --slow-query-log-file=/var/log/mysql/slow.log
+      --long-query-time=2
+    
+    # 健康检查
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DATABASE_ROOT_PASSWORD:-root123}"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 80s
+    
+    # 日志配置
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ============================================================================
+  # Redis缓存服务
+  # ============================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: intent_redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    
+    volumes:
+      # 数据持久化
+      - redis_data:/data
+      # Redis配置
+      - ./docker/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+      # 日志
+      - redis_logs:/var/log/redis
+    
+    networks:
+      - intent_network
+    
+    restart: unless-stopped
+    
+    # 资源限制
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 128M
+          cpus: '0.25'
+    
+    # Redis优化配置
+    command: redis-server /usr/local/etc/redis/redis.conf
+    
+    # 健康检查
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    
+    # 日志配置
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "3"
+
+  # ============================================================================
+  # Nginx反向代理 (生产环境)
+  # ============================================================================
+  nginx:
+    image: nginx:alpine
+    container_name: intent_nginx
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    
+    volumes:
+      # Nginx配置
+      - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./docker/nginx/conf.d:/etc/nginx/conf.d:ro
+      # SSL证书
+      - ./docker/nginx/ssl:/etc/nginx/ssl:ro
+      # 静态文件
+      - ./static:/var/www/static:ro
+      # 日志
+      - nginx_logs:/var/log/nginx
+    
+    networks:
+      - intent_network
+    
+    depends_on:
+      app:
+        condition: service_healthy
+    
+    restart: unless-stopped
+    
+    # 资源限制
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.5'
+        reservations:
+          memory: 64M
+          cpus: '0.25'
+    
+    # 健康检查
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    
+    # 日志配置
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "3"
+    
+    profiles:
+      - production
+
+  # ============================================================================
+  # Prometheus监控服务
+  # ============================================================================
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: intent_prometheus
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    
+    volumes:
+      # Prometheus配置
+      - ./docker/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./docker/monitoring/rules:/etc/prometheus/rules:ro
+      # 数据持久化
+      - prometheus_data:/prometheus
+    
+    networks:
+      - monitoring_network
+    
+    restart: unless-stopped
+    
+    # 资源限制
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+    
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-lifecycle'
+      - '--web.enable-admin-api'
+    
+    # 健康检查
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ============================================================================
+  # Grafana可视化服务
+  # ============================================================================
+  grafana:
+    image: grafana/grafana:latest
+    container_name: intent_grafana
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    
+    environment:
+      # 管理员配置
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      
+      # 安全配置
+      - GF_SECURITY_SECRET_KEY=${GRAFANA_SECRET_KEY:-SW2YcwTIb9zpOOhoPsMm}
+      - GF_SECURITY_DISABLE_GRAVATAR=true
+      
+      # 性能配置
+      - GF_EXPLORE_ENABLED=true
+      - GF_ALERTING_ENABLED=true
+      
+      # 数据库配置（可选：使用外部数据库）
+      - GF_DATABASE_TYPE=sqlite3
+    
+    volumes:
+      # 数据持久化
+      - grafana_data:/var/lib/grafana
+      # 配置文件
+      - ./docker/monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./docker/monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./docker/monitoring/grafana/grafana.ini:/etc/grafana/grafana.ini:ro
+    
+    networks:
+      - monitoring_network
+    
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    
+    restart: unless-stopped
+    
+    # 资源限制
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 128M
+          cpus: '0.25'
+    
+    # 健康检查
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    
+    user: "472:472"  # Grafana用户ID
+
+  # ============================================================================
+  # 日志聚合服务 (ELK Stack - 可选)
+  # ============================================================================
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: intent_elasticsearch
+    environment:
+      - discovery.type=single-node
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+      - xpack.security.enabled=false
+      - xpack.security.http.ssl.enabled=false
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    networks:
+      - monitoring_network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+    profiles:
+      - logging
+
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.11.0
+    container_name: intent_logstash
+    volumes:
+      - ./docker/logging/logstash.conf:/usr/share/logstash/pipeline/logstash.conf:ro
+    networks:
+      - monitoring_network
+    depends_on:
+      - elasticsearch
+    restart: unless-stopped
+    profiles:
+      - logging
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.11.0
+    container_name: intent_kibana
+    ports:
+      - "${KIBANA_PORT:-5601}:5601"
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    networks:
+      - monitoring_network
+    depends_on:
+      - elasticsearch
+    restart: unless-stopped
+    profiles:
+      - logging
+
+# ============================================================================
+# 网络定义
+# ============================================================================
+networks:
+  intent_network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+    driver_opts:
+      com.docker.network.bridge.name: br-intent
+
+  monitoring_network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.21.0.0/16
+    driver_opts:
+      com.docker.network.bridge.name: br-monitoring
+
+# ============================================================================
+# 数据卷定义
+# ============================================================================
+volumes:
+  # 应用相关
+  app_logs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./logs
+  
+  app_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./data
+  
+  app_tmp:
+    driver: local
+  
+  # 数据库相关
+  mysql_data:
+    driver: local
+  
+  mysql_logs:
+    driver: local
+  
+  # 缓存相关
+  redis_data:
+    driver: local
+  
+  redis_logs:
+    driver: local
+  
+  # Web服务器
+  nginx_logs:
+    driver: local
+  
+  # 监控相关
+  prometheus_data:
+    driver: local
+  
+  grafana_data:
+    driver: local
+  
+  # 日志聚合
+  elasticsearch_data:
+    driver: local
+
+# ============================================================================
+# 扩展配置 (Override)
+# ============================================================================
+# 开发环境: docker-compose -f docker-compose.optimized.yml -f docker-compose.dev.yml up
+# 生产环境: docker-compose -f docker-compose.optimized.yml --profile production up
+# 完整监控: docker-compose -f docker-compose.optimized.yml --profile production --profile logging up

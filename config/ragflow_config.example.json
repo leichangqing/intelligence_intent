@@ -1,0 +1,279 @@
+{
+  "ragflow_configs": [
+    {
+      "config_name": "default",
+      "api_endpoint": "https://api.ragflow.com/v1",
+      "api_key": "${RAGFLOW_API_KEY}",
+      "headers": {
+        "Content-Type": "application/json",
+        "User-Agent": "IntelligentAgent/1.0",
+        "X-Client-Version": "1.0.0"
+      },
+      "timeout_seconds": 30,
+      "rate_limit": {
+        "max_requests": 100,
+        "window_seconds": 60,
+        "burst_size": 10
+      },
+      "fallback_config": {
+        "enabled": true,
+        "config_name": "backup",
+        "default_response": "抱歉，我暂时无法回答您的问题。请稍后再试或联系客服。",
+        "max_retries": 3,
+        "retry_delay": 1.0
+      },
+      "health_check_url": "https://api.ragflow.com/health",
+      "is_active": true,
+      "description": "主要的RAGFLOW配置，用于处理一般性问题"
+    },
+    {
+      "config_name": "backup",
+      "api_endpoint": "https://backup.ragflow.com/v1",
+      "api_key": "${RAGFLOW_BACKUP_API_KEY}",
+      "headers": {
+        "Content-Type": "application/json",
+        "User-Agent": "IntelligentAgent/1.0",
+        "X-Client-Version": "1.0.0"
+      },
+      "timeout_seconds": 45,
+      "rate_limit": {
+        "max_requests": 50,
+        "window_seconds": 60,
+        "burst_size": 5
+      },
+      "fallback_config": {
+        "enabled": true,
+        "default_response": "抱歉，服务暂时不可用。请联系客服或稍后再试。",
+        "max_retries": 2,
+        "retry_delay": 2.0
+      },
+      "health_check_url": "https://backup.ragflow.com/health",
+      "is_active": true,
+      "description": "备份RAGFLOW配置，用于主服务不可用时的回退"
+    },
+    {
+      "config_name": "technical",
+      "api_endpoint": "https://tech.ragflow.com/v1",
+      "api_key": "${RAGFLOW_TECH_API_KEY}",
+      "headers": {
+        "Content-Type": "application/json",
+        "User-Agent": "IntelligentAgent/1.0",
+        "X-Client-Version": "1.0.0",
+        "X-Domain": "technical",
+        "X-Language": "zh-CN"
+      },
+      "timeout_seconds": 60,
+      "rate_limit": {
+        "max_requests": 200,
+        "window_seconds": 60,
+        "burst_size": 20
+      },
+      "fallback_config": {
+        "enabled": true,
+        "config_name": "default",
+        "default_response": "抱歉，技术问题暂时无法回答。请联系技术支持。",
+        "max_retries": 2,
+        "retry_delay": 1.5
+      },
+      "health_check_url": "https://tech.ragflow.com/health",
+      "is_active": true,
+      "description": "技术专用RAGFLOW配置，用于处理技术相关问题"
+    },
+    {
+      "config_name": "customer_service",
+      "api_endpoint": "https://cs.ragflow.com/v1",
+      "api_key": "${RAGFLOW_CS_API_KEY}",
+      "headers": {
+        "Content-Type": "application/json",
+        "User-Agent": "IntelligentAgent/1.0",
+        "X-Client-Version": "1.0.0",
+        "X-Domain": "customer_service"
+      },
+      "timeout_seconds": 25,
+      "rate_limit": {
+        "max_requests": 150,
+        "window_seconds": 60,
+        "burst_size": 15
+      },
+      "fallback_config": {
+        "enabled": true,
+        "config_name": "default",
+        "default_response": "抱歉，客服相关问题暂时无法回答。请直接联系人工客服。",
+        "max_retries": 3,
+        "retry_delay": 1.0
+      },
+      "health_check_url": "https://cs.ragflow.com/health",
+      "is_active": true,
+      "description": "客服专用RAGFLOW配置，用于处理客服相关问题"
+    },
+    {
+      "config_name": "financial",
+      "api_endpoint": "https://fin.ragflow.com/v1",
+      "api_key": "${RAGFLOW_FIN_API_KEY}",
+      "headers": {
+        "Content-Type": "application/json",
+        "User-Agent": "IntelligentAgent/1.0",
+        "X-Client-Version": "1.0.0",
+        "X-Domain": "financial",
+        "X-Security-Level": "high"
+      },
+      "timeout_seconds": 35,
+      "rate_limit": {
+        "max_requests": 80,
+        "window_seconds": 60,
+        "burst_size": 8
+      },
+      "fallback_config": {
+        "enabled": true,
+        "config_name": "default",
+        "default_response": "抱歉，金融相关问题暂时无法回答。请联系理财顾问。",
+        "max_retries": 2,
+        "retry_delay": 2.0
+      },
+      "health_check_url": "https://fin.ragflow.com/health",
+      "is_active": true,
+      "description": "金融专用RAGFLOW配置，用于处理金融相关问题"
+    },
+    {
+      "config_name": "development",
+      "api_endpoint": "https://dev.ragflow.com/v1",
+      "api_key": "${RAGFLOW_DEV_API_KEY}",
+      "headers": {
+        "Content-Type": "application/json",
+        "User-Agent": "IntelligentAgent/1.0-dev",
+        "X-Client-Version": "1.0.0-dev",
+        "X-Environment": "development"
+      },
+      "timeout_seconds": 120,
+      "rate_limit": {
+        "max_requests": 1000,
+        "window_seconds": 60,
+        "burst_size": 100
+      },
+      "fallback_config": {
+        "enabled": true,
+        "default_response": "开发环境：查询失败，请检查配置。",
+        "max_retries": 1,
+        "retry_delay": 0.5
+      },
+      "health_check_url": "https://dev.ragflow.com/health",
+      "is_active": false,
+      "description": "开发环境RAGFLOW配置，用于开发和测试"
+    }
+  ],
+  "feature_flags": [
+    {
+      "flag_name": "ragflow_enabled",
+      "is_enabled": true,
+      "description": "RAGFLOW服务总开关",
+      "rollout_percentage": 100,
+      "target_users": []
+    },
+    {
+      "flag_name": "ragflow_cache_enabled",
+      "is_enabled": true,
+      "description": "RAGFLOW缓存功能开关",
+      "rollout_percentage": 100,
+      "target_users": []
+    },
+    {
+      "flag_name": "ragflow_rate_limit_enabled",
+      "is_enabled": true,
+      "description": "RAGFLOW速率限制功能开关",
+      "rollout_percentage": 100,
+      "target_users": []
+    },
+    {
+      "flag_name": "ragflow_fallback_enabled",
+      "is_enabled": true,
+      "description": "RAGFLOW回退机制功能开关",
+      "rollout_percentage": 100,
+      "target_users": []
+    },
+    {
+      "flag_name": "ragflow_health_check_enabled",
+      "is_enabled": true,
+      "description": "RAGFLOW健康检查功能开关",
+      "rollout_percentage": 80,
+      "target_users": []
+    },
+    {
+      "flag_name": "ragflow_document_upload_enabled",
+      "is_enabled": false,
+      "description": "RAGFLOW文档上传功能开关",
+      "rollout_percentage": 0,
+      "target_users": ["admin", "tech_support"]
+    },
+    {
+      "flag_name": "ragflow_advanced_search_enabled",
+      "is_enabled": true,
+      "description": "RAGFLOW高级搜索功能开关",
+      "rollout_percentage": 50,
+      "target_users": []
+    },
+    {
+      "flag_name": "ragflow_multi_language_enabled",
+      "is_enabled": false,
+      "description": "RAGFLOW多语言支持功能开关",
+      "rollout_percentage": 0,
+      "target_users": ["beta_users"]
+    },
+    {
+      "flag_name": "ragflow_analytics_enabled",
+      "is_enabled": true,
+      "description": "RAGFLOW分析统计功能开关",
+      "rollout_percentage": 100,
+      "target_users": []
+    },
+    {
+      "flag_name": "ragflow_streaming_enabled",
+      "is_enabled": false,
+      "description": "RAGFLOW流式响应功能开关",
+      "rollout_percentage": 10,
+      "target_users": ["premium_users"]
+    }
+  ],
+  "global_settings": {
+    "default_config": "default",
+    "backup_config": "backup",
+    "max_concurrent_requests": 50,
+    "default_timeout": 30,
+    "default_rate_limit": {
+      "max_requests": 100,
+      "window_seconds": 60
+    },
+    "health_check_interval": 300,
+    "cache_ttl": 3600,
+    "retry_strategy": {
+      "max_retries": 3,
+      "base_delay": 1.0,
+      "backoff_factor": 2.0,
+      "max_delay": 60.0,
+      "jitter": true
+    },
+    "logging": {
+      "level": "INFO",
+      "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+      "file": "logs/ragflow.log",
+      "max_size": "10MB",
+      "backup_count": 5
+    },
+    "monitoring": {
+      "enabled": true,
+      "metrics_endpoint": "/metrics",
+      "health_endpoint": "/health/ragflow",
+      "stats_update_interval": 60
+    }
+  },
+  "security": {
+    "api_key_rotation_interval": 2592000,
+    "max_request_size": 1048576,
+    "allowed_origins": ["*"],
+    "rate_limit_headers": true,
+    "security_headers": {
+      "X-Content-Type-Options": "nosniff",
+      "X-Frame-Options": "DENY",
+      "X-XSS-Protection": "1; mode=block"
+    }
+  }
+}

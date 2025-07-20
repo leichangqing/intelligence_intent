@@ -1,0 +1,170 @@
+# ============================================================================
+# 优化的多阶段Docker构建 - TASK-054
+# 针对智能意图识别系统的生产级Docker配置优化
+# ============================================================================
+
+# ============================================================================
+# 阶段1: 基础镜像构建
+# ============================================================================
+FROM python:3.11-slim-bullseye AS base
+
+# 设置标签信息
+LABEL maintainer="Intent Recognition Team" \
+      version="1.0" \
+      description="Intelligent Intent Recognition System" \
+      org.opencontainers.image.source="https://github.com/intent-recognition/app" \
+      org.opencontainers.image.documentation="https://docs.intent-recognition.com"
+
+# 设置环境变量
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_DEFAULT_TIMEOUT=100 \
+    LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8
+
+# 创建应用用户和目录
+RUN groupadd --gid 1000 app && \
+    useradd --uid 1000 --gid app --shell /bin/bash --create-home app
+
+# 安装系统级依赖
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # 编译工具
+    gcc \
+    g++ \
+    # 网络工具
+    curl \
+    wget \
+    # SSL/TLS支持
+    ca-certificates \
+    # 清理工具
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+# ============================================================================
+# 阶段2: 依赖安装
+# ============================================================================
+FROM base AS dependencies
+
+# 设置工作目录
+WORKDIR /app
+
+# 升级pip并安装构建工具
+RUN pip install --upgrade pip setuptools wheel
+
+# 复制依赖文件
+COPY requirements.txt ./
+
+# 安装Python依赖
+RUN pip install --no-cache-dir -r requirements.txt && \
+    # 清理pip缓存
+    pip cache purge
+
+# ============================================================================
+# 阶段3: 应用构建
+# ============================================================================
+FROM dependencies AS builder
+
+# 复制源代码
+COPY src/ ./src/
+COPY alembic/ ./alembic/
+COPY alembic.ini ./
+COPY scripts/ ./scripts/
+
+# 编译Python字节码（提升启动速度）
+RUN python -m compileall src/
+
+# 设置适当的权限
+RUN chown -R app:app /app
+
+# ============================================================================
+# 阶段4: 生产运行时
+# ============================================================================
+FROM base AS production
+
+# 设置工作目录
+WORKDIR /app
+
+# 从依赖阶段复制已安装的包
+COPY --from=dependencies /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=dependencies /usr/local/bin /usr/local/bin
+
+# 从构建阶段复制应用代码
+COPY --from=builder --chown=app:app /app/src ./src/
+COPY --from=builder --chown=app:app /app/alembic ./alembic/
+COPY --from=builder --chown=app:app /app/alembic.ini ./
+COPY --from=builder --chown=app:app /app/scripts ./scripts/
+
+# 复制配置文件
+COPY --chown=app:app .env.example ./.env
+
+# 创建必要的目录
+RUN mkdir -p logs data tmp && \
+    chown -R app:app logs data tmp
+
+# 安全配置：移除不必要的包和设置安全限制
+RUN apt-get update && apt-get remove -y --auto-remove \
+    gcc \
+    g++ \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+# 切换到非root用户
+USER app
+
+# 设置健康检查
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8000/api/v1/health || exit 1
+
+# 暴露端口
+EXPOSE 8000
+
+# 设置启动脚本
+COPY --chown=app:app docker/entrypoint.sh ./entrypoint.sh
+
+# 生产环境启动命令
+CMD ["./entrypoint.sh"]
+
+# ============================================================================
+# 阶段5: 开发环境 (可选)
+# ============================================================================
+FROM dependencies AS development
+
+# 安装开发依赖
+COPY requirements-dev.txt ./
+RUN pip install --no-cache-dir -r requirements-dev.txt
+
+# 复制所有源代码（包括测试）
+COPY . .
+
+# 开发环境权限设置
+RUN chown -R app:app /app
+USER app
+
+# 开发环境启动命令
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+# ============================================================================
+# 阶段6: 测试环境
+# ============================================================================
+FROM development AS testing
+
+# 安装测试依赖
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    make \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+USER app
+
+# 运行测试
+RUN python -m pytest tests/ --cov=src --cov-report=term-missing
+
+# ============================================================================
+# 最终阶段选择
+# ============================================================================
+# 默认使用生产环境
+FROM production
