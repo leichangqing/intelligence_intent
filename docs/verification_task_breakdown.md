@@ -497,7 +497,7 @@ echo "🎯 目标任务: VT-XXX"
 # 1. 准备工作
 echo "📋 准备验证环境..."
 source venv/bin/activate
-cd /path/to/app711
+cd /path/to/intelligance_intent
 
 # 2. 执行验证任务
 echo "🚀 执行验证任务..."

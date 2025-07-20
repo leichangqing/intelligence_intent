@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(rm:*)",
+      "Bash(python test_intent_recognition.py:*)",
+      "Bash(python test:*)",
+      "Bash(python:*)",
+      "Bash(ls:*)",
+      "Bash(find:*)",
+      "Bash(PYTHONPATH=. python tests/test_dependency_system.py)",
+      "mcp__ide__executeCode",
+      "Bash(pip install:*)",
+      "Bash(grep:*)",
+      "Bash(chmod:*)",
+      "Bash(mkdir:*)"
+    ],
+    "deny": []
+  }
+}

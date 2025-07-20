@@ -51,7 +51,7 @@ class DockerOptimizationTester:
     
     def __init__(self):
         self.test_results = []
-        self.project_root = Path("/Users/leicq/my_intent/claude/app711")
+        self.project_root = Path("/Users/leicq/my_intent/claude/intelligance_intent")
         self.temp_dir = None
     
     def setup_test_environment(self):

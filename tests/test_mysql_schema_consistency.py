@@ -15,7 +15,7 @@ class MySQLSchemaValidator:
     def __init__(self):
         self.schema_tables = {}
         self.model_tables = {}
-        self.schema_path = "/Users/leicq/my_intent/claude/app711/docs/design/mysql_schema.sql"
+        self.schema_path = "/Users/leicq/my_intent/claude/intelligance_intent/docs/design/mysql_schema.sql"
         
         # 模型类映射
         self.model_mappings = {

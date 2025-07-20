@@ -15,7 +15,7 @@
 ## 项目结构
 
 ```
-app711/
+intelligance_intent/
 ├── src/
 │   ├── main.py                 # FastAPI应用入口
 │   ├── config/                 # 配置管理
@@ -87,7 +87,7 @@ app711/
 ```bash
 # 克隆项目
 git clone <repository>
-cd app711
+cd intelligance_intent
 
 # 创建虚拟环境
 python -m venv venv

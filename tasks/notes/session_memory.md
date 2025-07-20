@@ -27,7 +27,7 @@
 
 ### 项目结构
 ```
-app711/
+intelligance_intent/
 ├── tasks/                    # 新建：任务管理系统
 │   ├── README.md            # 任务管理说明
 │   ├── task_template.md     # 任务模板

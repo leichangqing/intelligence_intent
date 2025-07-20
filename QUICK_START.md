@@ -23,7 +23,7 @@
 ### 1. 克隆项目
 ```bash
 git clone <repository>
-cd app711
+cd intelligance_intent
 ```
 
 ### 2. 方式一：Docker启动（推荐）

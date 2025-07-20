@@ -1,6 +1,6 @@
 2025-07-20 10:26:10,006 - src.main - [32mINFO[0m - main.py:30 - 正在启动智能意图识别系统...
 2025-07-20 10:26:10,032 - src.main - [32mINFO[0m - main.py:35 - 数据库连接初始化完成
-2025-07-20 10:26:10,033 - src.main - [31mERROR[0m - main.py:60 - 系统启动失败: cannot import name 'IntentAmbiguity' from 'src.models' (/Users/leicq/my_intent/claude/app711/src/models/__init__.py)
+2025-07-20 10:26:10,033 - src.main - [31mERROR[0m - main.py:60 - 系统启动失败: cannot import name 'IntentAmbiguity' from 'src.models' (/Users/leicq/my_intent/claude/intelligance_intent/src/models/__init__.py)
 2025-07-20 10:26:24,624 - src.main - [32mINFO[0m - main.py:30 - 正在启动智能意图识别系统...
 2025-07-20 10:26:24,634 - src.main - [32mINFO[0m - main.py:35 - 数据库连接初始化完成
-2025-07-20 10:26:24,636 - src.main - [31mERROR[0m - main.py:60 - 系统启动失败: cannot import name 'IntentAmbiguity' from 'src.models' (/Users/leicq/my_intent/claude/app711/src/models/__init__.py)
+2025-07-20 10:26:24,636 - src.main - [31mERROR[0m - main.py:60 - 系统启动失败: cannot import name 'IntentAmbiguity' from 'src.models' (/Users/leicq/my_intent/claude/intelligance_intent/src/models/__init__.py)

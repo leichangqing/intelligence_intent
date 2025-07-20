@@ -151,7 +151,7 @@ tests/integration/
 pip install pytest pytest-asyncio pytest-cov pytest-html pytest-xdist
 
 # 设置Python路径
-export PYTHONPATH=/Users/leicq/my_intent/claude/app711:$PYTHONPATH
+export PYTHONPATH=/Users/leicq/my_intent/claude/intelligance_intent:$PYTHONPATH
 ```
 
 ### 2. 运行测试
@@ -349,7 +349,7 @@ python -m pytest tests/integration/test_conversation_flow.py::TestConversationFl
 **导入错误**
 ```bash
 # 确保项目根目录在Python路径中
-export PYTHONPATH=/Users/leicq/my_intent/claude/app711:$PYTHONPATH
+export PYTHONPATH=/Users/leicq/my_intent/claude/intelligance_intent:$PYTHONPATH
 ```
 
 **数据库连接错误**

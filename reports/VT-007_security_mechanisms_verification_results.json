@@ -19,18 +19,18 @@
       "status": "FAIL",
       "execution_time": "0.909s",
       "details": {
-        "error_details": "cannot import name 'get_cache_service_dependency' from 'src.services.cache_service' (/Users/leicq/my_intent/claude/app711/src/services/cache_service.py)"
+        "error_details": "cannot import name 'get_cache_service_dependency' from 'src.services.cache_service' (/Users/leicq/my_intent/claude/intelligance_intent/src/services/cache_service.py)"
       },
-      "error": "cannot import name 'get_cache_service_dependency' from 'src.services.cache_service' (/Users/leicq/my_intent/claude/app711/src/services/cache_service.py)"
+      "error": "cannot import name 'get_cache_service_dependency' from 'src.services.cache_service' (/Users/leicq/my_intent/claude/intelligance_intent/src/services/cache_service.py)"
     },
     {
       "test_name": "API Key管理验证",
       "status": "FAIL",
       "execution_time": "0.006s",
       "details": {
-        "error_details": "cannot import name 'RateLimitInfo' from 'src.security.api_key_manager' (/Users/leicq/my_intent/claude/app711/src/security/api_key_manager.py)"
+        "error_details": "cannot import name 'RateLimitInfo' from 'src.security.api_key_manager' (/Users/leicq/my_intent/claude/intelligance_intent/src/security/api_key_manager.py)"
       },
-      "error": "cannot import name 'RateLimitInfo' from 'src.security.api_key_manager' (/Users/leicq/my_intent/claude/app711/src/security/api_key_manager.py)"
+      "error": "cannot import name 'RateLimitInfo' from 'src.security.api_key_manager' (/Users/leicq/my_intent/claude/intelligance_intent/src/security/api_key_manager.py)"
     },
     {
       "test_name": "输入安全防护验证",
