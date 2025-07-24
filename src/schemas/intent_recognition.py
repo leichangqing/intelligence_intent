@@ -69,6 +69,7 @@ class IntentRecognitionResult(BaseModel):
     class Config:
         """Pydantic配置"""
         arbitrary_types_allowed = True  # 允许Intent模型对象
+        protected_namespaces = ()  # 允许model_开头的字段名
         json_encoders = {
             datetime: lambda v: v.isoformat(),
             Intent: lambda v: v.intent_name if v else None

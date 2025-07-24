@@ -183,7 +183,7 @@ class ConversationService:
             session_id=new_session_id,
             user_id=user_id,
             context=json.dumps(initial_context),
-            status='active'
+            session_state='active'
         )
         
         # 缓存新会话 - 使用标准化数据结构
@@ -249,9 +249,10 @@ class ConversationService:
         
         # V2.2重构: 创建对话记录，不再直接保存slots到JSON字段
         conversation = Conversation.create(
-            session=session,
+            session_id=session.session_id,
+            user_id=session.user_id,
             user_input=user_input,
-            intent_name=intent,
+            intent_recognized=intent,
             confidence_score=confidence,
             system_response=json.dumps(response, ensure_ascii=False),
             response_type=response.get('type', 'text'),
@@ -302,11 +303,13 @@ class ConversationService:
             session = Session.get(Session.session_id == session_id)
             conversations = (Conversation
                            .select()
-                           .where(Conversation.session == session)
+                           .where(Conversation.session_id == session.session_id)
                            .order_by(Conversation.created_at.desc())
                            .limit(limit))
             
             history = []
+            successful_history = []  # 用于缓存的成功记录
+            
             for conv in conversations:
                 # V2.2重构: 从slot_values表获取槽位信息
                 slots = {}
@@ -321,21 +324,32 @@ class ConversationService:
                 except (json.JSONDecodeError, AttributeError):
                     response = conv.system_response or ""
                 
-                history.append({
+                record = {
                     'id': conv.id,
                     'user_input': conv.user_input,
-                    'intent': conv.intent_name,
+                    'intent': conv.intent_recognized,
                     'slots': slots,
                     'response': response,
                     'confidence': float(conv.confidence_score) if conv.confidence_score else 0.0,
+                    'status': conv.status,
+                    'response_type': conv.response_type,
                     'created_at': conv.created_at.isoformat()
-                })
+                }
+                
+                history.append(record)
+                
+                # 只有成功的对话记录才添加到缓存中
+                # 排除系统错误、槽位验证错误等
+                if (conv.status not in ['system_error', 'validation_error', 'parsing_error'] and 
+                    conv.response_type not in ['system_error', 'validation_error']):
+                    successful_history.append(record)
             
             # 按时间正序排列
             history.reverse()
+            successful_history.reverse()
             
-            # 缓存历史记录
-            await self.cache_service.set(cache_key, history, 
+            # 只缓存成功的对话记录
+            await self.cache_service.set(cache_key, successful_history, 
                                        ttl=300, namespace=self.cache_namespace)
             
             return history

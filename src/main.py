@@ -22,6 +22,8 @@ from src.utils.logger import setup_logging, get_logger
 setup_logging()
 logger = get_logger(__name__)
 
+# 全局变量（已移除，使用依赖注入系统）
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -40,8 +42,8 @@ async def lifespan(app: FastAPI):
         logger.info("数据表检查完成")
         
         # 3. 初始化Redis缓存
-        cache_service = CacheService()
-        await cache_service.initialize()
+        from src.services.cache_service import get_cache_service
+        cache_service = await get_cache_service()
         logger.info("Redis缓存初始化完成")
         
         # 4. 初始化系统服务（包括同义词服务）
@@ -53,9 +55,8 @@ async def lifespan(app: FastAPI):
         logger.info("缓存预热完成")
         
         # 6. 初始化NLU引擎
-        from src.core.nlu_engine import NLUEngine
-        nlu_engine = NLUEngine()
-        await nlu_engine.initialize()
+        from src.api.dependencies import get_nlu_engine
+        await get_nlu_engine()  # 这会初始化全局的NLU引擎实例
         logger.info("NLU引擎初始化完成")
         
         logger.info(f"🚀 系统启动完成！监听端口: http://localhost:8000")
@@ -74,8 +75,14 @@ async def lifespan(app: FastAPI):
         # 关闭数据库连接
         close_database()
         
+        # 关闭NLU引擎连接
+        from src.api.dependencies import _nlu_engine
+        if _nlu_engine:
+            await _nlu_engine.cleanup()
+        
         # 关闭Redis连接
-        cache_service = CacheService()
+        from src.services.cache_service import get_cache_service
+        cache_service = await get_cache_service()
         await cache_service.close()
         
         logger.info("系统关闭完成")
@@ -186,19 +193,21 @@ async def _warm_up_cache():
     """缓存预热"""
     try:
         from src.services.intent_service import IntentService
-        from src.services.cache_service import CacheService
+        from src.services.cache_service import get_cache_service
         from src.core.nlu_engine import NLUEngine
         
-        cache_service = CacheService()
-        nlu_engine = NLUEngine()
+        cache_service = await get_cache_service()
+        # 使用依赖注入系统的NLU引擎实例，避免重复创建aiohttp会话
+        from src.api.dependencies import get_nlu_engine
+        nlu_engine = await get_nlu_engine()
         intent_service = IntentService(cache_service, nlu_engine)
         
         # 预热活跃意图配置
         active_intents = await intent_service._get_active_intents()
         logger.info(f"预热了 {len(active_intents)} 个活跃意图配置")
         
-        # 预热系统配置
-        from src.models.config import SystemConfig
+        # 预热系统配置  
+        from src.models.system_config import SystemConfig
         system_configs = list(SystemConfig.select().where(SystemConfig.is_active == True))
         config_dict = {config.config_key: config.config_value for config in system_configs}
         await cache_service.set("system_configs", config_dict, ttl=3600)

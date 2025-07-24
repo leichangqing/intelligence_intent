@@ -326,7 +326,7 @@ class SystemStabilityValidator:
                 results['intent_update'] = update_result
                 
                 # 测试槽位服务
-                slot_service = get_enhanced_slot_service()
+                slot_service = await get_enhanced_slot_service()
                 
                 # 创建测试槽位
                 test_slot_data = {

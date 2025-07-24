@@ -102,13 +102,17 @@ class RagflowConfig(CommonModel):
     """RAGFLOW配置表"""
     
     config_name = CharField(max_length=100, unique=True, verbose_name="配置名称")
-    api_endpoint = CharField(max_length=255, verbose_name="API端点")
-    api_key = CharField(max_length=255, null=True, verbose_name="API密钥")
-    headers = TextField(null=True, verbose_name="HTTP头部")
+    api_endpoint = CharField(max_length=500, verbose_name="API端点")
+    api_key_encrypted = TextField(null=True, verbose_name="加密的API密钥")
+    api_version = CharField(max_length=20, default="v1", verbose_name="API版本")
     timeout_seconds = IntegerField(default=30, verbose_name="超时时间(秒)")
-    rate_limit = TextField(null=True, verbose_name="速率限制配置")
-    fallback_config = TextField(null=True, verbose_name="回退配置")
-    health_check_url = CharField(max_length=255, null=True, verbose_name="健康检查URL")
+    max_retries = IntegerField(default=3, verbose_name="最大重试次数")
+    rate_limit_per_minute = IntegerField(default=60, verbose_name="每分钟限制")
+    connection_pool_size = IntegerField(default=10, verbose_name="连接池大小")
+    health_check_interval = IntegerField(default=300, verbose_name="健康检查间隔(秒)")
+    last_health_check = DateTimeField(null=True, verbose_name="最后健康检查时间")
+    health_status = CharField(max_length=20, default="unknown", verbose_name="健康状态")
+    config_metadata = TextField(null=True, verbose_name="配置元数据")
     is_active = BooleanField(default=True, verbose_name="是否激活")
     
     class Meta:
@@ -118,44 +122,30 @@ class RagflowConfig(CommonModel):
             (('is_active',), False),
         )
     
-    def get_headers(self) -> dict:
-        """获取HTTP头部"""
-        if self.headers:
+    @property
+    def api_key(self) -> str:
+        """获取API密钥（向后兼容）"""
+        # 这里可以添加解密逻辑
+        return self.api_key_encrypted
+    
+    @api_key.setter
+    def api_key(self, value: str):
+        """设置API密钥（向后兼容）"""
+        # 这里可以添加加密逻辑
+        self.api_key_encrypted = value
+    
+    def get_config_metadata(self) -> dict:
+        """获取配置元数据"""
+        if self.config_metadata:
             try:
-                return json.loads(self.headers)
+                return json.loads(self.config_metadata)
             except json.JSONDecodeError:
                 return {}
         return {}
     
-    def set_headers(self, headers: dict):
-        """设置HTTP头部"""
-        self.headers = json.dumps(headers, ensure_ascii=False) if headers else None
-    
-    def get_rate_limit(self) -> dict:
-        """获取速率限制配置"""
-        if self.rate_limit:
-            try:
-                return json.loads(self.rate_limit)
-            except json.JSONDecodeError:
-                return {}
-        return {}
-    
-    def set_rate_limit(self, rate_limit: dict):
-        """设置速率限制配置"""
-        self.rate_limit = json.dumps(rate_limit, ensure_ascii=False) if rate_limit else None
-    
-    def get_fallback_config(self) -> dict:
-        """获取回退配置"""
-        if self.fallback_config:
-            try:
-                return json.loads(self.fallback_config)
-            except json.JSONDecodeError:
-                return {}
-        return {}
-    
-    def set_fallback_config(self, fallback_config: dict):
-        """设置回退配置"""
-        self.fallback_config = json.dumps(fallback_config, ensure_ascii=False) if fallback_config else None
+    def set_config_metadata(self, metadata: dict):
+        """设置配置元数据"""
+        self.config_metadata = json.dumps(metadata, ensure_ascii=False) if metadata else None
     
     def __str__(self):
         return f"RagflowConfig({self.config_name})"

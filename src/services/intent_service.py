@@ -746,22 +746,22 @@ class IntentService:
             List[Dict]: 标准格式的识别结果列表
         """
         try:
-            if not nlu_result or nlu_result.intent == 'unknown':
+            if not nlu_result or nlu_result.intent_name == 'unknown':
                 return []
             
             # 主要结果
             results = [{
-                'intent_name': nlu_result.intent,
+                'intent_name': nlu_result.intent_name,
                 'confidence': nlu_result.confidence
             }]
             
             # 添加备选结果
             if hasattr(nlu_result, 'alternatives') and nlu_result.alternatives:
                 for alt in nlu_result.alternatives:
-                    if alt.get('intent') and alt.get('confidence'):
+                    if hasattr(alt, 'intent_name') and hasattr(alt, 'confidence'):
                         results.append({
-                            'intent_name': alt['intent'],
-                            'confidence': alt['confidence']
+                            'intent_name': alt.intent_name,
+                            'confidence': alt.confidence
                         })
             
             # 过滤掉不在活跃意图列表中的结果

@@ -2203,3 +2203,55 @@ class FunctionService:
                 continue
         
         return schemas
+    
+    async def execute_function_call(self, intent, slots: Dict[str, Any], session_context: Dict[str, Any]) -> 'FunctionExecutionResult':
+        """
+        执行功能调用
+        
+        Args:
+            intent: 意图对象
+            slots: 槽位值字典
+            session_context: 会话上下文
+            
+        Returns:
+            FunctionExecutionResult: 功能执行结果
+        """
+        try:
+            # 1. 检查意图是否有关联的功能配置
+            function_name = None
+            if hasattr(intent, 'function_config') and intent.function_config:
+                # 如果意图有直接的功能配置
+                config = intent.function_config
+                if isinstance(config, dict):
+                    function_name = config.get('function_name')
+                elif isinstance(config, str):
+                    function_name = config
+            
+            # 2. 如果没有找到功能配置，尝试按意图名称查找
+            if not function_name:
+                function_name = intent.intent_name
+            
+            # 3. 准备参数
+            parameters = dict(slots)
+            parameters.update({
+                'user_id': session_context.get('user_id'),
+                'session_id': session_context.get('session_id'),
+                'context': session_context
+            })
+            
+            # 4. 执行功能调用
+            result = await self.execute_function(
+                function_name=function_name,
+                parameters=parameters,
+                context=session_context,
+                user_id=session_context.get('user_id')
+            )
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"执行功能调用失败: intent={intent.intent_name}, error={str(e)}")
+            return FunctionExecutionResult(
+                success=False,
+                error=f"功能调用执行失败: {str(e)}"
+            )

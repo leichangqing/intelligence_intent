@@ -107,7 +107,7 @@ class EnhancedSlotService:
         """
         try:
             # 1. 先尝试从缓存获取
-            cache_key = self.cache_service.generate_key('slot_values', session_id=session_id)
+            cache_key = self.cache_service.get_cache_key('slot_values', session_id=session_id)
             cached_slots = await self.cache_service.get(cache_key)
             
             if cached_slots:
@@ -256,17 +256,29 @@ class EnhancedSlotService:
             if isinstance(slot_value, dict):
                 # 如果已经是字典格式
                 slot_info = SlotInfo(
-                    value=slot_value.get('value'),
+                    name=slot_name,
+                    extracted_value=slot_value.get('value'),
+                    normalized_value=slot_value.get('value'),
                     confidence=slot_value.get('confidence'),
-                    source=slot_value.get('source', 'nlu'),
+                    extraction_method=slot_value.get('source', 'nlu'),
                     original_text=slot_value.get('original_text'),
+                    is_confirmed=slot_value.get('is_validated', True),
+                    # 向后兼容字段
+                    value=slot_value.get('value'),
+                    source=slot_value.get('source', 'nlu'),
                     is_validated=slot_value.get('is_validated', True)
                 )
             else:
                 # 简单值格式
                 slot_info = SlotInfo(
-                    value=slot_value,
+                    name=slot_name,
+                    extracted_value=slot_value,
+                    normalized_value=slot_value,
                     confidence=None,
+                    extraction_method='nlu',
+                    is_confirmed=True,
+                    # 向后兼容字段
+                    value=slot_value,
                     source='nlu',
                     is_validated=True
                 )
@@ -279,7 +291,7 @@ class EnhancedSlotService:
         """获取槽位定义"""
         try:
             # 从缓存或数据库获取槽位定义
-            cache_key = self.cache_service.generate_key('slot_definitions', intent_name=intent.intent_name)
+            cache_key = self.cache_service.get_cache_key('slot_definitions', intent_name=intent.intent_name)
             definitions = await self.cache_service.get(cache_key)
             
             if not definitions:
@@ -334,7 +346,7 @@ class EnhancedSlotService:
     async def _update_slot_cache(self, session_id: str, slots: Dict[str, SlotInfo]):
         """更新槽位缓存"""
         try:
-            cache_key = self.cache_service.generate_key('slot_values', session_id=session_id)
+            cache_key = self.cache_service.get_cache_key('slot_values', session_id=session_id)
             cache_data = self.transformer.api_to_cache_format(slots)
             await self.cache_service.set(cache_key, cache_data, ttl=3600)
         except Exception as e:
@@ -356,11 +368,16 @@ class EnhancedSlotService:
 
 
 # 服务实例获取函数
-def get_enhanced_slot_service() -> EnhancedSlotService:
+async def get_enhanced_slot_service() -> EnhancedSlotService:
     """获取增强槽位服务实例"""
-    from src.api.dependencies import get_slot_service, get_cache_service
+    from src.services.cache_service import get_cache_service
+    from src.services.slot_service import SlotService
+    from src.core.nlu_engine import NLUEngine
     
-    slot_service = get_slot_service()
-    cache_service = get_cache_service()
+    # 使用异步方式获取已初始化的缓存服务
+    cache_service = await get_cache_service()
+    from src.api.dependencies import get_nlu_engine
+    nlu_engine = await get_nlu_engine()
+    slot_service = SlotService(cache_service, nlu_engine)
     
     return EnhancedSlotService(slot_service, cache_service)

@@ -340,9 +340,8 @@ async def _check_nlu_health() -> Dict[str, Any]:
         import time
         
         start_time = time.time()
-        nlu_engine = NLUEngine()
-        if not nlu_engine._initialized:
-            await nlu_engine.initialize()
+        from src.api.dependencies import get_nlu_engine
+        nlu_engine = await get_nlu_engine()
         
         # 执行简单的意图识别测试
         result = await nlu_engine.recognize_intent("健康检查测试", active_intents=None, context=None)
@@ -499,8 +498,8 @@ async def readiness_check():
             raise HTTPException(status_code=503, detail="数据库未就绪")
         
         # 检查NLU引擎是否初始化
-        nlu_engine = NLUEngine()
-        if not hasattr(nlu_engine, '_initialized') or not nlu_engine._initialized:
+        from src.api.dependencies import _nlu_engine
+        if not _nlu_engine or not hasattr(_nlu_engine, '_initialized') or not _nlu_engine._initialized:
             raise HTTPException(status_code=503, detail="NLU引擎未就绪")
         
         return StandardResponse(

@@ -164,10 +164,10 @@ class UserProfileService:
             # 查询用户的槽位值历史
             recent_slot_values = list(
                 SlotValue.select(SlotValue, SlotValue.slot)
-                .join(Conversation)
+                .join(Conversation, on=(SlotValue.conversation_id == Conversation.id))
                 .where(Conversation.user_id == user_id)
                 .where(SlotValue.created_at >= datetime.now() - timedelta(days=self.behavior_analysis_window))
-                .where(SlotValue.is_validated == True)
+                .where(SlotValue.validation_status == 'valid')
             )
             
             # 按槽位类型统计频率
@@ -175,8 +175,9 @@ class UserProfileService:
             
             for slot_value in recent_slot_values:
                 slot_name = slot_value.slot.slot_name
-                value = slot_value.normalized_value or slot_value.value
-                slot_frequencies[slot_name][value] += 1
+                value = slot_value.normalized_value or slot_value.extracted_value
+                if value:  # 只统计有值的槽位
+                    slot_frequencies[slot_name][value] += 1
             
             # 提取每个槽位的最常用值
             frequent_values = {}

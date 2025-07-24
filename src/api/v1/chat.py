@@ -289,7 +289,7 @@ async def _handle_clear_intent(intent_result, user_input: str, session_context: 
     
     # V2.2增强：使用统一的槽位数据服务
     from src.services.enhanced_slot_service import get_enhanced_slot_service
-    enhanced_slot_service = get_enhanced_slot_service()
+    enhanced_slot_service = await get_enhanced_slot_service()
     
     # 提取当前输入的槽位（使用增强服务，返回统一格式）
     slot_result = await enhanced_slot_service.extract_slots(
@@ -409,7 +409,7 @@ async def _generate_slot_prompt(intent, slot_result, session_context: Dict,
     
     # V2.2增强：使用统一的槽位数据服务
     from src.services.enhanced_slot_service import get_enhanced_slot_service
-    enhanced_slot_service = get_enhanced_slot_service()
+    enhanced_slot_service = await get_enhanced_slot_service()
     
     # 生成槽位询问提示
     prompt_message = await enhanced_slot_service.generate_slot_prompt(
@@ -516,18 +516,35 @@ async def _save_conversation_record(user_id: str, session_id: str, user_input: s
         from src.models.conversation import Session
         session = Session.get(Session.session_id == session_id)
         
-        conversation = Conversation.create(
-            session=session,
-            user_id=session.user_id,
-            user_input=user_input,
-            intent_name=intent_result.intent.intent_name if intent_result.intent else None,
-            confidence_score=intent_result.confidence,
-            system_response=response.response,
-            response_type=response.response_type,
-            status=response.status,
-            processing_time_ms=processing_time,
-            conversation_turn=conversation_turn
-        )
+        # 检查是否已存在相同的记录，避免重复键错误
+        try:
+            conversation = Conversation.get(
+                Conversation.session_id == session.session_id,
+                Conversation.id == conversation_turn  # 假设conversation_turn对应id
+            )
+            # 更新现有记录
+            conversation.user_input = user_input
+            conversation.intent_recognized = intent_result.intent.intent_name if intent_result.intent else None
+            conversation.confidence_score = intent_result.confidence
+            conversation.system_response = response.response
+            conversation.response_type = response.response_type
+            conversation.status = response.status
+            conversation.processing_time_ms = processing_time
+            conversation.save()
+        except Conversation.DoesNotExist:
+            # 创建新记录
+            conversation = Conversation.create(
+                session=session,
+                user_id=session.user_id,
+                user_input=user_input,
+                intent_name=intent_result.intent.intent_name if intent_result.intent else None,
+                confidence_score=intent_result.confidence,
+                system_response=response.response,
+                response_type=response.response_type,
+                status=response.status,
+                processing_time_ms=processing_time,
+                conversation_turn=conversation_turn
+            )
         
         # V2.2重构: 如果有槽位信息，保存到slot_values表
         if response.slots:

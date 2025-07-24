@@ -23,7 +23,7 @@ class ConversationStatus(CommonModel):
     
     # 流程控制字段
     is_final = BooleanField(default=False, verbose_name="是否为最终状态")
-    next_allowed_statuses = JSONField(null=True, verbose_name="允许的下一状态列表")
+    next_allowed_status = JSONField(null=True, verbose_name="允许的下一状态列表")
     auto_transition_rules = JSONField(null=True, verbose_name="自动转换规则")
     
     # 业务字段
@@ -32,7 +32,7 @@ class ConversationStatus(CommonModel):
     is_active = BooleanField(default=True, verbose_name="是否激活")
     
     class Meta:
-        table_name = 'conversation_statuses'
+        table_name = 'conversation_status'
         indexes = (
             (('status_code',), True),  # 唯一索引
             (('category',), False),
@@ -40,29 +40,29 @@ class ConversationStatus(CommonModel):
             (('is_final',), False),
         )
     
-    def get_next_allowed_statuses(self) -> List[str]:
+    def get_next_allowed_status(self) -> List[str]:
         """获取允许的下一状态代码列表"""
-        if self.next_allowed_statuses:
-            return self.next_allowed_statuses if isinstance(self.next_allowed_statuses, list) else []
+        if self.next_allowed_status:
+            return self.next_allowed_status if isinstance(self.next_allowed_status, list) else []
         return []
     
-    def set_next_allowed_statuses(self, status_codes: List[str]):
+    def set_next_allowed_status(self, status_codes: List[str]):
         """设置允许的下一状态代码列表"""
-        self.next_allowed_statuses = status_codes
+        self.next_allowed_status = status_codes
     
     def add_next_allowed_status(self, status_code: str):
         """添加一个允许的下一状态"""
-        current_statuses = self.get_next_allowed_statuses()
-        if status_code not in current_statuses:
-            current_statuses.append(status_code)
-            self.set_next_allowed_statuses(current_statuses)
+        current_status = self.get_next_allowed_status()
+        if status_code not in current_status:
+            current_status.append(status_code)
+            self.set_next_allowed_status(current_status)
     
     def remove_next_allowed_status(self, status_code: str):
         """移除一个允许的下一状态"""
-        current_statuses = self.get_next_allowed_statuses()
-        if status_code in current_statuses:
-            current_statuses.remove(status_code)
-            self.set_next_allowed_statuses(current_statuses)
+        current_status = self.get_next_allowed_status()
+        if status_code in current_status:
+            current_status.remove(status_code)
+            self.set_next_allowed_status(current_status)
     
     def get_auto_transition_rules(self) -> Dict:
         """获取自动转换规则"""
@@ -79,11 +79,11 @@ class ConversationStatus(CommonModel):
         if self.is_final:
             return False
         
-        allowed_statuses = self.get_next_allowed_statuses()
-        if not allowed_statuses:  # 如果没有限制，允许转换到任何状态
+        allowed_status = self.get_next_allowed_status()
+        if not allowed_status:  # 如果没有限制，允许转换到任何状态
             return True
         
-        return target_status_code in allowed_statuses
+        return target_status_code in allowed_status
     
     def should_auto_transition(self, context: Dict = None) -> Optional[str]:
         """
@@ -175,7 +175,7 @@ class ConversationStatus(CommonModel):
             return None
     
     @classmethod
-    def get_initial_statuses(cls) -> List['ConversationStatus']:
+    def get_initial_status(cls) -> List['ConversationStatus']:
         """获取所有初始状态"""
         return list(cls.select().where(
             cls.is_active == True,
@@ -183,7 +183,7 @@ class ConversationStatus(CommonModel):
         ).order_by(cls.sort_order))
     
     @classmethod
-    def get_final_statuses(cls) -> List['ConversationStatus']:
+    def get_final_status(cls) -> List['ConversationStatus']:
         """获取所有最终状态"""
         return list(cls.select().where(
             cls.is_active == True,
@@ -199,7 +199,7 @@ class ConversationStatus(CommonModel):
         ).order_by(cls.sort_order))
     
     @classmethod
-    def get_active_statuses(cls) -> List['ConversationStatus']:
+    def get_active_status(cls) -> List['ConversationStatus']:
         """获取所有激活的状态"""
         return list(cls.select().where(cls.is_active == True).order_by(cls.sort_order))
     
@@ -230,7 +230,7 @@ class ConversationStatus(CommonModel):
                 }
             ]
         """
-        created_statuses = []
+        created_status = []
         
         for config in status_flow_config:
             # 检查状态是否已存在
@@ -239,21 +239,21 @@ class ConversationStatus(CommonModel):
                 # 更新现有状态
                 for key, value in config.items():
                     if key == 'next_allowed':
-                        existing.set_next_allowed_statuses(value)
+                        existing.set_next_allowed_status(value)
                     elif hasattr(existing, key):
                         setattr(existing, key, value)
                 existing.save()
-                created_statuses.append(existing)
+                created_status.append(existing)
             else:
                 # 创建新状态
                 next_allowed = config.pop('next_allowed', [])
                 status = cls.create(**config)
                 if next_allowed:
-                    status.set_next_allowed_statuses(next_allowed)
+                    status.set_next_allowed_status(next_allowed)
                     status.save()
-                created_statuses.append(status)
+                created_status.append(status)
         
-        return created_statuses
+        return created_status
     
     @classmethod
     def validate_status_flow(cls, status_codes: List[str]) -> Dict[str, List[str]]:
@@ -281,39 +281,39 @@ class ConversationStatus(CommonModel):
             return result
         
         # 检查流程连通性
-        statuses = {code: cls.get_by_code(code) for code in existing_codes}
+        status = {code: cls.get_by_code(code) for code in existing_codes}
         
         # 检查是否有初始状态
-        initial_statuses = [code for code, status in statuses.items() if status.is_initial_status()]
-        if not initial_statuses:
+        initial_status = [code for code, status in status.items() if status.is_initial_status()]
+        if not initial_status:
             result['warnings'].append("没有找到初始状态")
         
         # 检查是否有最终状态
-        final_statuses = [code for code, status in statuses.items() if status.is_final]
-        if not final_statuses:
+        final_status = [code for code, status in status.items() if status.is_final]
+        if not final_status:
             result['warnings'].append("没有找到最终状态")
         
         # 检查状态转换的连通性
-        unreachable_statuses = cls._find_unreachable_statuses(statuses)
-        if unreachable_statuses:
-            result['warnings'].append(f"无法到达的状态: {', '.join(unreachable_statuses)}")
+        unreachable_status = cls._find_unreachable_status(status)
+        if unreachable_status:
+            result['warnings'].append(f"无法到达的状态: {', '.join(unreachable_status)}")
         
         return result
     
     @classmethod
-    def _find_unreachable_statuses(cls, statuses: Dict[str, 'ConversationStatus']) -> List[str]:
+    def _find_unreachable_status(cls, status: Dict[str, 'ConversationStatus']) -> List[str]:
         """找出无法到达的状态"""
-        if not statuses:
+        if not status:
             return []
         
         # 使用BFS查找所有可达状态
-        initial_statuses = [code for code, status in statuses.items() if status.is_initial_status()]
-        if not initial_statuses:
+        initial_status = [code for code, status in status.items() if status.is_initial_status()]
+        if not initial_status:
             # 如果没有明确的初始状态，使用第一个状态
-            initial_statuses = [list(statuses.keys())[0]]
+            initial_status = [list(status.keys())[0]]
         
         reachable = set()
-        queue = list(initial_statuses)
+        queue = list(initial_status)
         
         while queue:
             current = queue.pop(0)
@@ -321,25 +321,25 @@ class ConversationStatus(CommonModel):
                 continue
             
             reachable.add(current)
-            status = statuses.get(current)
+            status = status.get(current)
             if status:
-                next_statuses = status.get_next_allowed_statuses()
-                for next_status in next_statuses:
-                    if next_status in statuses and next_status not in reachable:
+                next_status = status.get_next_allowed_status()
+                for next_status in next_status:
+                    if next_status in status and next_status not in reachable:
                         queue.append(next_status)
         
         # 返回无法到达的状态
-        all_statuses = set(statuses.keys())
-        return list(all_statuses - reachable)
+        all_status = set(status.keys())
+        return list(all_status - reachable)
     
     @classmethod
     def get_status_transition_graph(cls) -> Dict[str, List[str]]:
         """获取状态转换图"""
-        statuses = cls.get_active_statuses()
+        status = cls.get_active_status()
         graph = {}
         
-        for status in statuses:
-            graph[status.status_code] = status.get_next_allowed_statuses()
+        for status in status:
+            graph[status.status_code] = status.get_next_allowed_status()
         
         return graph
     

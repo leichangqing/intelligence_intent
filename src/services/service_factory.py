@@ -9,6 +9,7 @@ from src.services.audit_service import AuditService
 from src.services.cache_invalidation_service import CacheInvalidationService
 from src.services.intent_service import IntentService
 from src.services.slot_service import SlotService
+from src.services.enhanced_slot_service import EnhancedSlotService
 from src.core.nlu_engine import NLUEngine
 from src.utils.logger import get_logger
 

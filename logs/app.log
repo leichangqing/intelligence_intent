@@ -1,6 +1,932 @@
-2025-07-20 10:26:10,006 - src.main - [32mINFO[0m - main.py:30 - 正在启动智能意图识别系统...
-2025-07-20 10:26:10,032 - src.main - [32mINFO[0m - main.py:35 - 数据库连接初始化完成
-2025-07-20 10:26:10,033 - src.main - [31mERROR[0m - main.py:60 - 系统启动失败: cannot import name 'IntentAmbiguity' from 'src.models' (/Users/leicq/my_intent/claude/intelligance_intent/src/models/__init__.py)
-2025-07-20 10:26:24,624 - src.main - [32mINFO[0m - main.py:30 - 正在启动智能意图识别系统...
-2025-07-20 10:26:24,634 - src.main - [32mINFO[0m - main.py:35 - 数据库连接初始化完成
-2025-07-20 10:26:24,636 - src.main - [31mERROR[0m - main.py:60 - 系统启动失败: cannot import name 'IntentAmbiguity' from 'src.models' (/Users/leicq/my_intent/claude/intelligance_intent/src/models/__init__.py)
+2025-07-24 14:32:02,233 - src.main - [32mINFO[0m - main.py:33 - 正在启动智能意图识别系统...
+2025-07-24 14:32:02,241 - src.main - [32mINFO[0m - main.py:38 - 数据库连接初始化完成
+2025-07-24 14:32:02,787 - src.main - [32mINFO[0m - main.py:42 - 数据表检查完成
+2025-07-24 14:32:02,861 - src.services.cache_service - [32mINFO[0m - cache_service.py:73 - Redis缓存服务初始化成功
+2025-07-24 14:32:02,861 - src.main - [32mINFO[0m - main.py:47 - Redis缓存初始化完成
+2025-07-24 14:32:02,862 - src.services.startup_service - [32mINFO[0m - startup_service.py:26 - 开始初始化系统服务...
+2025-07-24 14:32:02,862 - src.services.startup_service - [32mINFO[0m - startup_service.py:50 - 缓存服务初始化完成
+2025-07-24 14:32:02,912 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:115 - 加载同义词词典完成: 47个同义词, 12个词组
+2025-07-24 14:32:02,922 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:154 - 加载停用词完成: 52个
+2025-07-24 14:32:02,928 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:192 - 加载实体模式完成: 10个
+2025-07-24 14:32:02,929 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:51 - 同义词数据重新加载完成
+2025-07-24 14:32:02,929 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:35 - 同义词服务初始化完成
+2025-07-24 14:32:02,930 - src.services.startup_service - [32mINFO[0m - startup_service.py:58 - ✅ 同义词服务初始化完成
+2025-07-24 14:32:02,931 - src.services.startup_service - [32mINFO[0m - startup_service.py:68 - 其他服务初始化完成
+2025-07-24 14:32:02,931 - src.services.startup_service - [32mINFO[0m - startup_service.py:38 - ✅ 所有系统服务初始化完成
+2025-07-24 14:32:02,932 - src.main - [32mINFO[0m - main.py:51 - 系统服务初始化完成
+2025-07-24 14:32:02,932 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:102 - LLM初始化完成 - 连接到: http://10.5.180.13:9997/v1/chat/completions
+2025-07-24 14:32:03,245 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:158 - ✅ LLM连接测试成功
+2025-07-24 14:32:03,251 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:142 - 加载了4个意图到缓存
+2025-07-24 14:32:03,252 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:118 - NLU引擎初始化完成
+2025-07-24 14:32:03,335 - src.main - [32mINFO[0m - main.py:207 - 预热了 4 个活跃意图配置
+2025-07-24 14:32:03,344 - src.main - [32mINFO[0m - main.py:214 - 预热了 6 个系统配置
+2025-07-24 14:32:03,346 - src.main - [32mINFO[0m - main.py:55 - 缓存预热完成
+2025-07-24 14:32:03,347 - src.main - [32mINFO[0m - main.py:60 - NLU引擎初始化完成
+2025-07-24 14:32:03,347 - src.main - [32mINFO[0m - main.py:62 - 🚀 系统启动完成！监听端口: http://localhost:8000
+2025-07-24 14:32:03,348 - src.main - [32mINFO[0m - main.py:63 - 📚 API文档: http://localhost:8000/docs
+2025-07-24 14:32:51,344 - request - [32mINFO[0m - logger.py:131 - REQUEST POST http://localhost:8000/api/v1/chat/interact [req_id=req_1753338771344]
+2025-07-24 14:32:51,475 - src.services.cache_service - [32mINFO[0m - cache_service.py:73 - Redis缓存服务初始化成功
+2025-07-24 14:32:51,480 - src.api.v1.chat - [32mINFO[0m - chat.py:55 - 收到对话请求: req_1753338771_8e147c13, 用户: enterprise_user_001
+2025-07-24 14:32:57,314 - src.api.v1.chat - [31mERROR[0m - chat.py:116 - 对话处理失败: req_1753338771_8e147c13, 错误: (1054, "Unknown column 't1.current_intent_id' in 'field list'")
+2025-07-24 14:32:57,322 - request - [32mINFO[0m - logger.py:137 - RESPONSE 200 5977ms [req_id=req_1753338771344]
+2025-07-24 14:32:57,323 - performance - [32mINFO[0m - logger.py:167 - API_CALL POST /api/v1/chat/interact SUCCESS 5977ms
+2025-07-24 14:32:57,346 - src.api.v1.chat - [31mERROR[0m - chat.py:604 - 保存错误对话记录失败: (1054, "Unknown column 'updated_at' in 'field list'")
+2025-07-24 14:34:27,145 - src.main - [32mINFO[0m - main.py:72 - 正在关闭系统...
+2025-07-24 14:34:27,155 - src.services.cache_service - [32mINFO[0m - cache_service.py:87 - Redis连接已关闭
+2025-07-24 14:34:27,157 - src.main - [32mINFO[0m - main.py:88 - 系统关闭完成
+2025-07-24 14:34:35,828 - src.main - [32mINFO[0m - main.py:33 - 正在启动智能意图识别系统...
+2025-07-24 14:34:35,836 - src.main - [32mINFO[0m - main.py:38 - 数据库连接初始化完成
+2025-07-24 14:34:35,943 - src.main - [32mINFO[0m - main.py:42 - 数据表检查完成
+2025-07-24 14:34:36,031 - src.services.cache_service - [32mINFO[0m - cache_service.py:73 - Redis缓存服务初始化成功
+2025-07-24 14:34:36,032 - src.main - [32mINFO[0m - main.py:47 - Redis缓存初始化完成
+2025-07-24 14:34:36,032 - src.services.startup_service - [32mINFO[0m - startup_service.py:26 - 开始初始化系统服务...
+2025-07-24 14:34:36,033 - src.services.startup_service - [32mINFO[0m - startup_service.py:50 - 缓存服务初始化完成
+2025-07-24 14:34:36,158 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:115 - 加载同义词词典完成: 47个同义词, 12个词组
+2025-07-24 14:34:36,169 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:154 - 加载停用词完成: 52个
+2025-07-24 14:34:36,177 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:192 - 加载实体模式完成: 10个
+2025-07-24 14:34:36,178 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:51 - 同义词数据重新加载完成
+2025-07-24 14:34:36,178 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:35 - 同义词服务初始化完成
+2025-07-24 14:34:36,180 - src.services.startup_service - [32mINFO[0m - startup_service.py:58 - ✅ 同义词服务初始化完成
+2025-07-24 14:34:36,182 - src.services.startup_service - [32mINFO[0m - startup_service.py:68 - 其他服务初始化完成
+2025-07-24 14:34:36,183 - src.services.startup_service - [32mINFO[0m - startup_service.py:38 - ✅ 所有系统服务初始化完成
+2025-07-24 14:34:36,184 - src.main - [32mINFO[0m - main.py:51 - 系统服务初始化完成
+2025-07-24 14:34:36,185 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:102 - LLM初始化完成 - 连接到: http://10.5.180.13:9997/v1/chat/completions
+2025-07-24 14:34:36,457 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:158 - ✅ LLM连接测试成功
+2025-07-24 14:34:36,463 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:142 - 加载了4个意图到缓存
+2025-07-24 14:34:36,464 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:118 - NLU引擎初始化完成
+2025-07-24 14:34:36,527 - src.main - [32mINFO[0m - main.py:207 - 预热了 4 个活跃意图配置
+2025-07-24 14:34:36,537 - src.main - [32mINFO[0m - main.py:214 - 预热了 6 个系统配置
+2025-07-24 14:34:36,537 - src.main - [32mINFO[0m - main.py:55 - 缓存预热完成
+2025-07-24 14:34:36,538 - src.main - [32mINFO[0m - main.py:60 - NLU引擎初始化完成
+2025-07-24 14:34:36,538 - src.main - [32mINFO[0m - main.py:62 - 🚀 系统启动完成！监听端口: http://localhost:8000
+2025-07-24 14:34:36,539 - src.main - [32mINFO[0m - main.py:63 - 📚 API文档: http://localhost:8000/docs
+2025-07-24 14:34:54,147 - src.main - [32mINFO[0m - main.py:72 - 正在关闭系统...
+2025-07-24 14:34:54,150 - src.services.cache_service - [32mINFO[0m - cache_service.py:87 - Redis连接已关闭
+2025-07-24 14:34:54,150 - src.main - [32mINFO[0m - main.py:88 - 系统关闭完成
+2025-07-24 14:35:08,557 - src.main - [32mINFO[0m - main.py:33 - 正在启动智能意图识别系统...
+2025-07-24 14:35:08,565 - src.main - [32mINFO[0m - main.py:38 - 数据库连接初始化完成
+2025-07-24 14:35:08,735 - src.main - [32mINFO[0m - main.py:42 - 数据表检查完成
+2025-07-24 14:35:08,894 - src.services.cache_service - [32mINFO[0m - cache_service.py:73 - Redis缓存服务初始化成功
+2025-07-24 14:35:08,895 - src.main - [32mINFO[0m - main.py:47 - Redis缓存初始化完成
+2025-07-24 14:35:08,896 - src.services.startup_service - [32mINFO[0m - startup_service.py:26 - 开始初始化系统服务...
+2025-07-24 14:35:08,897 - src.services.startup_service - [32mINFO[0m - startup_service.py:50 - 缓存服务初始化完成
+2025-07-24 14:35:08,945 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:115 - 加载同义词词典完成: 47个同义词, 12个词组
+2025-07-24 14:35:08,953 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:154 - 加载停用词完成: 52个
+2025-07-24 14:35:08,958 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:192 - 加载实体模式完成: 10个
+2025-07-24 14:35:08,959 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:51 - 同义词数据重新加载完成
+2025-07-24 14:35:08,959 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:35 - 同义词服务初始化完成
+2025-07-24 14:35:08,960 - src.services.startup_service - [32mINFO[0m - startup_service.py:58 - ✅ 同义词服务初始化完成
+2025-07-24 14:35:08,961 - src.services.startup_service - [32mINFO[0m - startup_service.py:68 - 其他服务初始化完成
+2025-07-24 14:35:08,961 - src.services.startup_service - [32mINFO[0m - startup_service.py:38 - ✅ 所有系统服务初始化完成
+2025-07-24 14:35:08,962 - src.main - [32mINFO[0m - main.py:51 - 系统服务初始化完成
+2025-07-24 14:35:08,962 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:102 - LLM初始化完成 - 连接到: http://10.5.180.13:9997/v1/chat/completions
+2025-07-24 14:35:09,247 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:158 - ✅ LLM连接测试成功
+2025-07-24 14:35:09,252 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:142 - 加载了4个意图到缓存
+2025-07-24 14:35:09,252 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:118 - NLU引擎初始化完成
+2025-07-24 14:35:09,296 - src.main - [32mINFO[0m - main.py:207 - 预热了 4 个活跃意图配置
+2025-07-24 14:35:09,303 - src.main - [32mINFO[0m - main.py:214 - 预热了 6 个系统配置
+2025-07-24 14:35:09,304 - src.main - [32mINFO[0m - main.py:55 - 缓存预热完成
+2025-07-24 14:35:09,305 - src.main - [32mINFO[0m - main.py:60 - NLU引擎初始化完成
+2025-07-24 14:35:09,305 - src.main - [32mINFO[0m - main.py:62 - 🚀 系统启动完成！监听端口: http://localhost:8000
+2025-07-24 14:35:09,306 - src.main - [32mINFO[0m - main.py:63 - 📚 API文档: http://localhost:8000/docs
+2025-07-24 14:35:38,253 - src.main - [32mINFO[0m - main.py:72 - 正在关闭系统...
+2025-07-24 14:35:38,255 - src.services.cache_service - [32mINFO[0m - cache_service.py:87 - Redis连接已关闭
+2025-07-24 14:35:38,256 - src.main - [32mINFO[0m - main.py:88 - 系统关闭完成
+2025-07-24 14:35:45,180 - src.main - [32mINFO[0m - main.py:33 - 正在启动智能意图识别系统...
+2025-07-24 14:35:45,189 - src.main - [32mINFO[0m - main.py:38 - 数据库连接初始化完成
+2025-07-24 14:35:45,343 - src.main - [32mINFO[0m - main.py:42 - 数据表检查完成
+2025-07-24 14:35:45,460 - src.services.cache_service - [32mINFO[0m - cache_service.py:73 - Redis缓存服务初始化成功
+2025-07-24 14:35:45,460 - src.main - [32mINFO[0m - main.py:47 - Redis缓存初始化完成
+2025-07-24 14:35:45,461 - src.services.startup_service - [32mINFO[0m - startup_service.py:26 - 开始初始化系统服务...
+2025-07-24 14:35:45,462 - src.services.startup_service - [32mINFO[0m - startup_service.py:50 - 缓存服务初始化完成
+2025-07-24 14:35:45,506 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:115 - 加载同义词词典完成: 47个同义词, 12个词组
+2025-07-24 14:35:45,515 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:154 - 加载停用词完成: 52个
+2025-07-24 14:35:45,520 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:192 - 加载实体模式完成: 10个
+2025-07-24 14:35:45,521 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:51 - 同义词数据重新加载完成
+2025-07-24 14:35:45,521 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:35 - 同义词服务初始化完成
+2025-07-24 14:35:45,522 - src.services.startup_service - [32mINFO[0m - startup_service.py:58 - ✅ 同义词服务初始化完成
+2025-07-24 14:35:45,522 - src.services.startup_service - [32mINFO[0m - startup_service.py:68 - 其他服务初始化完成
+2025-07-24 14:35:45,523 - src.services.startup_service - [32mINFO[0m - startup_service.py:38 - ✅ 所有系统服务初始化完成
+2025-07-24 14:35:45,523 - src.main - [32mINFO[0m - main.py:51 - 系统服务初始化完成
+2025-07-24 14:35:45,524 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:102 - LLM初始化完成 - 连接到: http://10.5.180.13:9997/v1/chat/completions
+2025-07-24 14:35:45,819 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:158 - ✅ LLM连接测试成功
+2025-07-24 14:35:45,824 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:142 - 加载了4个意图到缓存
+2025-07-24 14:35:45,825 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:118 - NLU引擎初始化完成
+2025-07-24 14:35:45,837 - src.main - [32mINFO[0m - main.py:207 - 预热了 4 个活跃意图配置
+2025-07-24 14:35:45,846 - src.main - [32mINFO[0m - main.py:214 - 预热了 6 个系统配置
+2025-07-24 14:35:45,847 - src.main - [32mINFO[0m - main.py:55 - 缓存预热完成
+2025-07-24 14:35:45,848 - src.main - [32mINFO[0m - main.py:60 - NLU引擎初始化完成
+2025-07-24 14:35:45,848 - src.main - [32mINFO[0m - main.py:62 - 🚀 系统启动完成！监听端口: http://localhost:8000
+2025-07-24 14:35:45,849 - src.main - [32mINFO[0m - main.py:63 - 📚 API文档: http://localhost:8000/docs
+2025-07-24 14:35:46,156 - src.main - [32mINFO[0m - main.py:72 - 正在关闭系统...
+2025-07-24 14:35:46,161 - src.services.cache_service - [32mINFO[0m - cache_service.py:87 - Redis连接已关闭
+2025-07-24 14:35:46,162 - src.main - [32mINFO[0m - main.py:88 - 系统关闭完成
+2025-07-24 14:35:52,336 - src.main - [32mINFO[0m - main.py:33 - 正在启动智能意图识别系统...
+2025-07-24 14:35:52,343 - src.main - [32mINFO[0m - main.py:38 - 数据库连接初始化完成
+2025-07-24 14:35:52,445 - src.main - [32mINFO[0m - main.py:42 - 数据表检查完成
+2025-07-24 14:35:52,523 - src.services.cache_service - [32mINFO[0m - cache_service.py:73 - Redis缓存服务初始化成功
+2025-07-24 14:35:52,523 - src.main - [32mINFO[0m - main.py:47 - Redis缓存初始化完成
+2025-07-24 14:35:52,524 - src.services.startup_service - [32mINFO[0m - startup_service.py:26 - 开始初始化系统服务...
+2025-07-24 14:35:52,525 - src.services.startup_service - [32mINFO[0m - startup_service.py:50 - 缓存服务初始化完成
+2025-07-24 14:35:52,568 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:115 - 加载同义词词典完成: 47个同义词, 12个词组
+2025-07-24 14:35:52,576 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:154 - 加载停用词完成: 52个
+2025-07-24 14:35:52,581 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:192 - 加载实体模式完成: 10个
+2025-07-24 14:35:52,582 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:51 - 同义词数据重新加载完成
+2025-07-24 14:35:52,582 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:35 - 同义词服务初始化完成
+2025-07-24 14:35:52,583 - src.services.startup_service - [32mINFO[0m - startup_service.py:58 - ✅ 同义词服务初始化完成
+2025-07-24 14:35:52,583 - src.services.startup_service - [32mINFO[0m - startup_service.py:68 - 其他服务初始化完成
+2025-07-24 14:35:52,584 - src.services.startup_service - [32mINFO[0m - startup_service.py:38 - ✅ 所有系统服务初始化完成
+2025-07-24 14:35:52,584 - src.main - [32mINFO[0m - main.py:51 - 系统服务初始化完成
+2025-07-24 14:35:52,585 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:102 - LLM初始化完成 - 连接到: http://10.5.180.13:9997/v1/chat/completions
+2025-07-24 14:35:52,870 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:158 - ✅ LLM连接测试成功
+2025-07-24 14:35:52,877 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:142 - 加载了4个意图到缓存
+2025-07-24 14:35:52,878 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:118 - NLU引擎初始化完成
+2025-07-24 14:35:52,921 - src.main - [32mINFO[0m - main.py:207 - 预热了 4 个活跃意图配置
+2025-07-24 14:35:52,932 - src.main - [32mINFO[0m - main.py:214 - 预热了 6 个系统配置
+2025-07-24 14:35:52,932 - src.main - [32mINFO[0m - main.py:55 - 缓存预热完成
+2025-07-24 14:35:52,933 - src.main - [32mINFO[0m - main.py:60 - NLU引擎初始化完成
+2025-07-24 14:35:52,933 - src.main - [32mINFO[0m - main.py:62 - 🚀 系统启动完成！监听端口: http://localhost:8000
+2025-07-24 14:35:52,935 - src.main - [32mINFO[0m - main.py:63 - 📚 API文档: http://localhost:8000/docs
+2025-07-24 14:35:54,047 - src.main - [32mINFO[0m - main.py:72 - 正在关闭系统...
+2025-07-24 14:35:54,050 - src.services.cache_service - [32mINFO[0m - cache_service.py:87 - Redis连接已关闭
+2025-07-24 14:35:54,051 - src.main - [32mINFO[0m - main.py:88 - 系统关闭完成
+2025-07-24 14:36:05,325 - src.main - [32mINFO[0m - main.py:33 - 正在启动智能意图识别系统...
+2025-07-24 14:36:05,331 - src.main - [32mINFO[0m - main.py:38 - 数据库连接初始化完成
+2025-07-24 14:36:05,434 - src.main - [32mINFO[0m - main.py:42 - 数据表检查完成
+2025-07-24 14:36:05,615 - src.services.cache_service - [32mINFO[0m - cache_service.py:73 - Redis缓存服务初始化成功
+2025-07-24 14:36:05,616 - src.main - [32mINFO[0m - main.py:47 - Redis缓存初始化完成
+2025-07-24 14:36:05,617 - src.services.startup_service - [32mINFO[0m - startup_service.py:26 - 开始初始化系统服务...
+2025-07-24 14:36:05,618 - src.services.startup_service - [32mINFO[0m - startup_service.py:50 - 缓存服务初始化完成
+2025-07-24 14:36:05,681 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:115 - 加载同义词词典完成: 47个同义词, 12个词组
+2025-07-24 14:36:05,693 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:154 - 加载停用词完成: 52个
+2025-07-24 14:36:05,699 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:192 - 加载实体模式完成: 10个
+2025-07-24 14:36:05,700 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:51 - 同义词数据重新加载完成
+2025-07-24 14:36:05,700 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:35 - 同义词服务初始化完成
+2025-07-24 14:36:05,701 - src.services.startup_service - [32mINFO[0m - startup_service.py:58 - ✅ 同义词服务初始化完成
+2025-07-24 14:36:05,701 - src.services.startup_service - [32mINFO[0m - startup_service.py:68 - 其他服务初始化完成
+2025-07-24 14:36:05,702 - src.services.startup_service - [32mINFO[0m - startup_service.py:38 - ✅ 所有系统服务初始化完成
+2025-07-24 14:36:05,703 - src.main - [32mINFO[0m - main.py:51 - 系统服务初始化完成
+2025-07-24 14:36:05,704 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:102 - LLM初始化完成 - 连接到: http://10.5.180.13:9997/v1/chat/completions
+2025-07-24 14:36:05,993 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:158 - ✅ LLM连接测试成功
+2025-07-24 14:36:05,999 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:142 - 加载了4个意图到缓存
+2025-07-24 14:36:06,000 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:118 - NLU引擎初始化完成
+2025-07-24 14:36:06,032 - src.main - [32mINFO[0m - main.py:207 - 预热了 4 个活跃意图配置
+2025-07-24 14:36:06,040 - src.main - [32mINFO[0m - main.py:214 - 预热了 6 个系统配置
+2025-07-24 14:36:06,040 - src.main - [32mINFO[0m - main.py:55 - 缓存预热完成
+2025-07-24 14:36:06,040 - src.main - [32mINFO[0m - main.py:60 - NLU引擎初始化完成
+2025-07-24 14:36:06,041 - src.main - [32mINFO[0m - main.py:62 - 🚀 系统启动完成！监听端口: http://localhost:8000
+2025-07-24 14:36:06,041 - src.main - [32mINFO[0m - main.py:63 - 📚 API文档: http://localhost:8000/docs
+2025-07-24 14:38:12,974 - src.main - [32mINFO[0m - main.py:33 - 正在启动智能意图识别系统...
+2025-07-24 14:38:12,986 - src.main - [32mINFO[0m - main.py:38 - 数据库连接初始化完成
+2025-07-24 14:38:13,221 - src.main - [32mINFO[0m - main.py:42 - 数据表检查完成
+2025-07-24 14:38:13,327 - src.services.cache_service - [32mINFO[0m - cache_service.py:73 - Redis缓存服务初始化成功
+2025-07-24 14:38:13,327 - src.main - [32mINFO[0m - main.py:47 - Redis缓存初始化完成
+2025-07-24 14:38:13,328 - src.services.startup_service - [32mINFO[0m - startup_service.py:26 - 开始初始化系统服务...
+2025-07-24 14:38:13,329 - src.services.startup_service - [32mINFO[0m - startup_service.py:50 - 缓存服务初始化完成
+2025-07-24 14:38:13,469 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:115 - 加载同义词词典完成: 47个同义词, 12个词组
+2025-07-24 14:38:13,477 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:154 - 加载停用词完成: 52个
+2025-07-24 14:38:13,482 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:192 - 加载实体模式完成: 10个
+2025-07-24 14:38:13,483 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:51 - 同义词数据重新加载完成
+2025-07-24 14:38:13,484 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:35 - 同义词服务初始化完成
+2025-07-24 14:38:13,485 - src.services.startup_service - [32mINFO[0m - startup_service.py:58 - ✅ 同义词服务初始化完成
+2025-07-24 14:38:13,486 - src.services.startup_service - [32mINFO[0m - startup_service.py:68 - 其他服务初始化完成
+2025-07-24 14:38:13,486 - src.services.startup_service - [32mINFO[0m - startup_service.py:38 - ✅ 所有系统服务初始化完成
+2025-07-24 14:38:13,487 - src.main - [32mINFO[0m - main.py:51 - 系统服务初始化完成
+2025-07-24 14:38:13,488 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:102 - LLM初始化完成 - 连接到: http://10.5.180.13:9997/v1/chat/completions
+2025-07-24 14:38:13,810 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:158 - ✅ LLM连接测试成功
+2025-07-24 14:38:13,815 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:142 - 加载了4个意图到缓存
+2025-07-24 14:38:13,816 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:118 - NLU引擎初始化完成
+2025-07-24 14:38:13,930 - src.main - [32mINFO[0m - main.py:207 - 预热了 4 个活跃意图配置
+2025-07-24 14:38:13,938 - src.main - [32mINFO[0m - main.py:214 - 预热了 6 个系统配置
+2025-07-24 14:38:13,939 - src.main - [32mINFO[0m - main.py:55 - 缓存预热完成
+2025-07-24 14:38:13,939 - src.main - [32mINFO[0m - main.py:60 - NLU引擎初始化完成
+2025-07-24 14:38:13,940 - src.main - [32mINFO[0m - main.py:62 - 🚀 系统启动完成！监听端口: http://localhost:8000
+2025-07-24 14:38:13,941 - src.main - [32mINFO[0m - main.py:63 - 📚 API文档: http://localhost:8000/docs
+2025-07-24 14:38:21,264 - request - [32mINFO[0m - logger.py:131 - REQUEST POST http://localhost:8000/api/v1/chat/interact [req_id=req_1753339101264]
+2025-07-24 14:38:21,306 - src.services.cache_service - [32mINFO[0m - cache_service.py:73 - Redis缓存服务初始化成功
+2025-07-24 14:38:21,310 - src.api.v1.chat - [32mINFO[0m - chat.py:55 - 收到对话请求: req_1753339101_43e59e2c, 用户: enterprise_user_001
+2025-07-24 14:38:33,483 - src.services.conversation_service - [32mINFO[0m - conversation_service.py:202 - 创建新会话: sess_adccdddbc8a4 for user: enterprise_user_001
+2025-07-24 14:38:33,541 - src.services.user_preference_service - [32mINFO[0m - user_preference_service.py:251 - 保存默认用户偏好: enterprise_user_001, 项目数: 12
+2025-07-24 14:38:33,572 - src.services.user_preference_service - [32mINFO[0m - user_preference_service.py:78 - 获取用户偏好成功: enterprise_user_001, 项目数: 12
+2025-07-24 14:38:33,605 - src.services.slot_value_service - [31mERROR[0m - slot_value_service.py:558 - 获取会话槽位值失败: type object 'Conversation' has no attribute 'session'
+2025-07-24 14:38:39,341 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:250 - 意图识别完成: 我想订一张明天去上海的机票 -> Intent(book_flight: 订机票) (0.852)
+2025-07-24 14:38:39,360 - src.services.intent_service - [32mINFO[0m - intent_service.py:372 - 阈值决策: 置信度 0.852 通过 intent-specific (book_flight)阈值 0.700 (等级: high)
+2025-07-24 14:38:39,377 - src.core.ambiguity_detector - [32mINFO[0m - ambiguity_detector.py:154 - 歧义检测完成: 综合得分=0.718, 主要类型=confidence, 信号数=7
+2025-07-24 14:38:39,377 - src.services.intent_service - [32mINFO[0m - intent_service.py:976 - 增强歧义检测: 歧义得分=0.718, 主要类型=confidence, 候选数=1
+2025-07-24 14:38:39,429 - src.services.intent_service - [32mINFO[0m - intent_service.py:106 - 意图识别完成: 我想订一张明天去上海的机票 -> book_flight
+2025-07-24 14:38:39,433 - src.services.intent_service - [32mINFO[0m - intent_service.py:193 - 历史增强意图识别完成: 我想订一张明天去上海的机票 -> book_flight (置信度: 0.852)
+2025-07-24 14:38:39,449 - src.services.slot_service - [31mERROR[0m - slot_service.py:151 - 槽位提取失败: (1054, "Unknown column 't1.sort_order' in 'field list'")
+2025-07-24 14:38:39,460 - src.services.enhanced_slot_service - [31mERROR[0m - enhanced_slot_service.py:317 - 获取槽位定义失败: book_flight, 错误: (1054, "Unknown column 't1.sort_order' in 'field list'")
+2025-07-24 14:38:39,465 - src.services.function_service - [33mWARNING[0m - function_service.py:1084 - 数据库不可用，跳过函数初始化: (1146, "Table 'intent_db.functions' doesn't exist")
+2025-07-24 14:38:39,469 - src.services.function_service - [31mERROR[0m - function_service.py:1148 - 从注册器加载函数失败: book_flight, (1146, "Table 'intent_db.functions' doesn't exist")
+2025-07-24 14:38:39,470 - src.services.function_service - [31mERROR[0m - function_service.py:703 - 加载功能定义失败: book_flight, 'Depends' object has no attribute 'get'
+2025-07-24 14:38:39,471 - src.services.function_service - [31mERROR[0m - function_service.py:418 - 功能执行失败: book_flight, 功能未注册: book_flight (尝试 1)
+2025-07-24 14:38:39,472 - src.services.function_service - [33mWARNING[0m - function_service.py:292 - 函数 book_flight 执行失败 (第1次尝试): 功能未注册: book_flight, 1.03秒后重试
+2025-07-24 14:38:40,505 - src.services.function_service - [31mERROR[0m - function_service.py:1148 - 从注册器加载函数失败: book_flight, (1146, "Table 'intent_db.functions' doesn't exist")
+2025-07-24 14:38:40,507 - src.services.function_service - [31mERROR[0m - function_service.py:703 - 加载功能定义失败: book_flight, 'Depends' object has no attribute 'get'
+2025-07-24 14:38:40,508 - src.services.function_service - [31mERROR[0m - function_service.py:418 - 功能执行失败: book_flight, 功能未注册: book_flight (尝试 2)
+2025-07-24 14:38:40,509 - src.services.function_service - [33mWARNING[0m - function_service.py:292 - 函数 book_flight 执行失败 (第2次尝试): 功能未注册: book_flight, 2.19秒后重试
+2025-07-24 14:38:42,710 - src.services.function_service - [31mERROR[0m - function_service.py:1148 - 从注册器加载函数失败: book_flight, (1146, "Table 'intent_db.functions' doesn't exist")
+2025-07-24 14:38:42,710 - src.services.function_service - [31mERROR[0m - function_service.py:703 - 加载功能定义失败: book_flight, 'Depends' object has no attribute 'get'
+2025-07-24 14:38:42,712 - src.services.function_service - [31mERROR[0m - function_service.py:418 - 功能执行失败: book_flight, 功能未注册: book_flight (尝试 3)
+2025-07-24 14:38:42,713 - src.services.function_service - [31mERROR[0m - function_service.py:319 - 函数 book_flight 执行失败，已用尽所有重试次数: 功能未注册: book_flight
+2025-07-24 14:38:42,717 - src.api.v1.chat - [31mERROR[0m - chat.py:369 - 功能调用执行失败: 'FunctionExecutionResult' object has no attribute 'error_message'
+2025-07-24 14:38:42,722 - request - [32mINFO[0m - logger.py:137 - RESPONSE 200 21457ms [req_id=req_1753339101264]
+2025-07-24 14:38:42,723 - performance - [32mINFO[0m - logger.py:167 - API_CALL POST /api/v1/chat/interact SUCCESS 21457ms
+2025-07-24 14:38:42,736 - src.api.v1.chat - [31mERROR[0m - chat.py:565 - 保存对话记录失败: type object 'Conversation' has no attribute 'session'
+2025-07-24 14:40:25,221 - src.main - [32mINFO[0m - main.py:72 - 正在关闭系统...
+2025-07-24 14:40:25,227 - src.services.cache_service - [32mINFO[0m - cache_service.py:87 - Redis连接已关闭
+2025-07-24 14:40:25,228 - src.main - [32mINFO[0m - main.py:88 - 系统关闭完成
+2025-07-24 14:40:32,563 - src.main - [32mINFO[0m - main.py:33 - 正在启动智能意图识别系统...
+2025-07-24 14:40:32,570 - src.main - [32mINFO[0m - main.py:38 - 数据库连接初始化完成
+2025-07-24 14:40:32,727 - src.main - [32mINFO[0m - main.py:42 - 数据表检查完成
+2025-07-24 14:40:32,897 - src.services.cache_service - [32mINFO[0m - cache_service.py:73 - Redis缓存服务初始化成功
+2025-07-24 14:40:32,897 - src.main - [32mINFO[0m - main.py:47 - Redis缓存初始化完成
+2025-07-24 14:40:32,898 - src.services.startup_service - [32mINFO[0m - startup_service.py:26 - 开始初始化系统服务...
+2025-07-24 14:40:32,899 - src.services.startup_service - [32mINFO[0m - startup_service.py:50 - 缓存服务初始化完成
+2025-07-24 14:40:32,944 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:115 - 加载同义词词典完成: 47个同义词, 12个词组
+2025-07-24 14:40:32,952 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:154 - 加载停用词完成: 52个
+2025-07-24 14:40:32,957 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:192 - 加载实体模式完成: 10个
+2025-07-24 14:40:32,958 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:51 - 同义词数据重新加载完成
+2025-07-24 14:40:32,958 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:35 - 同义词服务初始化完成
+2025-07-24 14:40:32,959 - src.services.startup_service - [32mINFO[0m - startup_service.py:58 - ✅ 同义词服务初始化完成
+2025-07-24 14:40:32,960 - src.services.startup_service - [32mINFO[0m - startup_service.py:68 - 其他服务初始化完成
+2025-07-24 14:40:32,960 - src.services.startup_service - [32mINFO[0m - startup_service.py:38 - ✅ 所有系统服务初始化完成
+2025-07-24 14:40:32,961 - src.main - [32mINFO[0m - main.py:51 - 系统服务初始化完成
+2025-07-24 14:40:32,961 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:102 - LLM初始化完成 - 连接到: http://10.5.180.13:9997/v1/chat/completions
+2025-07-24 14:40:33,291 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:158 - ✅ LLM连接测试成功
+2025-07-24 14:40:33,296 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:142 - 加载了4个意图到缓存
+2025-07-24 14:40:33,297 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:118 - NLU引擎初始化完成
+2025-07-24 14:40:33,407 - src.main - [32mINFO[0m - main.py:207 - 预热了 4 个活跃意图配置
+2025-07-24 14:40:33,416 - src.main - [32mINFO[0m - main.py:214 - 预热了 6 个系统配置
+2025-07-24 14:40:33,417 - src.main - [32mINFO[0m - main.py:55 - 缓存预热完成
+2025-07-24 14:40:33,418 - src.main - [32mINFO[0m - main.py:60 - NLU引擎初始化完成
+2025-07-24 14:40:33,419 - src.main - [32mINFO[0m - main.py:62 - 🚀 系统启动完成！监听端口: http://localhost:8000
+2025-07-24 14:40:33,419 - src.main - [32mINFO[0m - main.py:63 - 📚 API文档: http://localhost:8000/docs
+2025-07-24 14:40:37,255 - src.main - [32mINFO[0m - main.py:72 - 正在关闭系统...
+2025-07-24 14:40:37,259 - src.services.cache_service - [32mINFO[0m - cache_service.py:87 - Redis连接已关闭
+2025-07-24 14:40:37,260 - src.main - [32mINFO[0m - main.py:88 - 系统关闭完成
+2025-07-24 14:40:44,097 - src.main - [32mINFO[0m - main.py:33 - 正在启动智能意图识别系统...
+2025-07-24 14:40:44,104 - src.main - [32mINFO[0m - main.py:38 - 数据库连接初始化完成
+2025-07-24 14:40:44,215 - src.main - [32mINFO[0m - main.py:42 - 数据表检查完成
+2025-07-24 14:40:44,364 - src.services.cache_service - [32mINFO[0m - cache_service.py:73 - Redis缓存服务初始化成功
+2025-07-24 14:40:44,365 - src.main - [32mINFO[0m - main.py:47 - Redis缓存初始化完成
+2025-07-24 14:40:44,366 - src.services.startup_service - [32mINFO[0m - startup_service.py:26 - 开始初始化系统服务...
+2025-07-24 14:40:44,366 - src.services.startup_service - [32mINFO[0m - startup_service.py:50 - 缓存服务初始化完成
+2025-07-24 14:40:44,425 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:115 - 加载同义词词典完成: 47个同义词, 12个词组
+2025-07-24 14:40:44,435 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:154 - 加载停用词完成: 52个
+2025-07-24 14:40:44,441 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:192 - 加载实体模式完成: 10个
+2025-07-24 14:40:44,442 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:51 - 同义词数据重新加载完成
+2025-07-24 14:40:44,443 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:35 - 同义词服务初始化完成
+2025-07-24 14:40:44,443 - src.services.startup_service - [32mINFO[0m - startup_service.py:58 - ✅ 同义词服务初始化完成
+2025-07-24 14:40:44,444 - src.services.startup_service - [32mINFO[0m - startup_service.py:68 - 其他服务初始化完成
+2025-07-24 14:40:44,445 - src.services.startup_service - [32mINFO[0m - startup_service.py:38 - ✅ 所有系统服务初始化完成
+2025-07-24 14:40:44,445 - src.main - [32mINFO[0m - main.py:51 - 系统服务初始化完成
+2025-07-24 14:40:44,446 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:102 - LLM初始化完成 - 连接到: http://10.5.180.13:9997/v1/chat/completions
+2025-07-24 14:40:44,757 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:158 - ✅ LLM连接测试成功
+2025-07-24 14:40:44,770 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:142 - 加载了4个意图到缓存
+2025-07-24 14:40:44,771 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:118 - NLU引擎初始化完成
+2025-07-24 14:40:44,784 - src.main - [32mINFO[0m - main.py:207 - 预热了 4 个活跃意图配置
+2025-07-24 14:40:44,795 - src.main - [32mINFO[0m - main.py:214 - 预热了 6 个系统配置
+2025-07-24 14:40:44,796 - src.main - [32mINFO[0m - main.py:55 - 缓存预热完成
+2025-07-24 14:40:44,797 - src.main - [32mINFO[0m - main.py:60 - NLU引擎初始化完成
+2025-07-24 14:40:44,798 - src.main - [32mINFO[0m - main.py:62 - 🚀 系统启动完成！监听端口: http://localhost:8000
+2025-07-24 14:40:44,798 - src.main - [32mINFO[0m - main.py:63 - 📚 API文档: http://localhost:8000/docs
+2025-07-24 14:43:05,413 - src.main - [32mINFO[0m - main.py:33 - 正在启动智能意图识别系统...
+2025-07-24 14:43:05,419 - src.main - [32mINFO[0m - main.py:38 - 数据库连接初始化完成
+2025-07-24 14:43:05,638 - src.main - [32mINFO[0m - main.py:42 - 数据表检查完成
+2025-07-24 14:43:05,996 - src.services.cache_service - [32mINFO[0m - cache_service.py:73 - Redis缓存服务初始化成功
+2025-07-24 14:43:05,997 - src.main - [32mINFO[0m - main.py:47 - Redis缓存初始化完成
+2025-07-24 14:43:05,998 - src.services.startup_service - [32mINFO[0m - startup_service.py:26 - 开始初始化系统服务...
+2025-07-24 14:43:05,999 - src.services.startup_service - [32mINFO[0m - startup_service.py:50 - 缓存服务初始化完成
+2025-07-24 14:43:06,111 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:115 - 加载同义词词典完成: 47个同义词, 12个词组
+2025-07-24 14:43:06,123 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:154 - 加载停用词完成: 52个
+2025-07-24 14:43:06,132 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:192 - 加载实体模式完成: 10个
+2025-07-24 14:43:06,132 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:51 - 同义词数据重新加载完成
+2025-07-24 14:43:06,133 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:35 - 同义词服务初始化完成
+2025-07-24 14:43:06,134 - src.services.startup_service - [32mINFO[0m - startup_service.py:58 - ✅ 同义词服务初始化完成
+2025-07-24 14:43:06,135 - src.services.startup_service - [32mINFO[0m - startup_service.py:68 - 其他服务初始化完成
+2025-07-24 14:43:06,136 - src.services.startup_service - [32mINFO[0m - startup_service.py:38 - ✅ 所有系统服务初始化完成
+2025-07-24 14:43:06,137 - src.main - [32mINFO[0m - main.py:51 - 系统服务初始化完成
+2025-07-24 14:43:06,138 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:102 - LLM初始化完成 - 连接到: http://10.5.180.13:9997/v1/chat/completions
+2025-07-24 14:43:06,455 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:158 - ✅ LLM连接测试成功
+2025-07-24 14:43:06,462 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:142 - 加载了4个意图到缓存
+2025-07-24 14:43:06,463 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:118 - NLU引擎初始化完成
+2025-07-24 14:43:06,471 - src.main - [32mINFO[0m - main.py:207 - 预热了 4 个活跃意图配置
+2025-07-24 14:43:06,485 - src.main - [32mINFO[0m - main.py:214 - 预热了 6 个系统配置
+2025-07-24 14:43:06,486 - src.main - [32mINFO[0m - main.py:55 - 缓存预热完成
+2025-07-24 14:43:06,487 - src.main - [32mINFO[0m - main.py:60 - NLU引擎初始化完成
+2025-07-24 14:43:06,488 - src.main - [32mINFO[0m - main.py:62 - 🚀 系统启动完成！监听端口: http://localhost:8000
+2025-07-24 14:43:06,489 - src.main - [32mINFO[0m - main.py:63 - 📚 API文档: http://localhost:8000/docs
+2025-07-24 14:43:27,000 - request - [32mINFO[0m - logger.py:131 - REQUEST POST http://localhost:8000/api/v1/chat/interact [req_id=req_1753339407000]
+2025-07-24 14:43:29,535 - src.services.cache_service - [32mINFO[0m - cache_service.py:73 - Redis缓存服务初始化成功
+2025-07-24 14:43:29,538 - src.api.v1.chat - [32mINFO[0m - chat.py:55 - 收到对话请求: req_1753339409_27158094, 用户: enterprise_user_001
+2025-07-24 14:43:33,195 - src.services.conversation_service - [32mINFO[0m - conversation_service.py:140 - 找到用户最近活跃会话: sess_adccdddbc8a4
+2025-07-24 14:43:40,365 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:250 - 意图识别完成: 我想订一张明天去上海的机票 -> Intent(book_flight: 订机票) (0.852)
+2025-07-24 14:43:40,371 - src.services.intent_service - [32mINFO[0m - intent_service.py:372 - 阈值决策: 置信度 0.852 通过 intent-specific (book_flight)阈值 0.700 (等级: high)
+2025-07-24 14:43:40,376 - src.services.intent_service - [32mINFO[0m - intent_service.py:106 - 意图识别完成: 我想订一张明天去上海的机票 -> book_flight
+2025-07-24 14:43:40,381 - src.services.intent_service - [32mINFO[0m - intent_service.py:193 - 历史增强意图识别完成: 我想订一张明天去上海的机票 -> book_flight (置信度: 0.852)
+2025-07-24 14:43:40,413 - src.services.audit_service - [32mINFO[0m - audit_service.py:77 - 记录审计日志成功: slot_definitions.1 INSERT by slot_service
+2025-07-24 14:43:40,436 - src.services.slot_service - [31mERROR[0m - slot_service.py:1035 - 获取槽位依赖关系失败: (1054, "Unknown column 't1.updated_at' in 'field list'")
+2025-07-24 14:43:40,438 - src.core.dependency_graph - [32mINFO[0m - dependency_graph.py:463 - 构建依赖图完成: intent_id=1, 节点数=4, 边数=0
+2025-07-24 14:43:40,484 - src.services.user_profile_service - [31mERROR[0m - user_profile_service.py:196 - 获取常用槽位值失败: enterprise_user_001, 错误: Unable to find foreign key between <Model: SlotValue> and <Model: Conversation>. Please specify an explicit join condition.
+2025-07-24 14:43:40,498 - src.core.slot_inheritance - [32mINFO[0m - slot_inheritance.py:507 - 完成继承处理: 用户=enterprise_user_001, 继承槽位=0, 应用规则=0
+2025-07-24 14:43:43,615 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:556 - 实体提取完成: '我想订一张明天去上海的机票...' -> 3 个实体
+2025-07-24 14:43:51,236 - src.services.slot_service - [32mINFO[0m - slot_service.py:145 - 增强槽位提取完成: book_flight, 提取=3个, 继承=0个, 缺失=1个
+2025-07-24 14:43:53,093 - src.api.v1.chat - [33mWARNING[0m - chat.py:408 - 更新会话槽位失败: 'SlotValueService' object has no attribute 'update_session_slots'
+2025-07-24 14:43:53,110 - src.core.question_generator - [33mWARNING[0m - question_generator.py:315 - 模板生成失败: AttributeError: DIRECT
+2025-07-24 14:43:53,110 - src.core.question_generator - [33mWARNING[0m - question_generator.py:315 - 模板生成失败: AttributeError: DIRECT
+2025-07-24 14:43:53,111 - src.core.question_generator - [33mWARNING[0m - question_generator.py:315 - 模板生成失败: AttributeError: DIRECT
+2025-07-24 14:43:53,111 - src.core.question_generator - [33mWARNING[0m - question_generator.py:315 - 模板生成失败: AttributeError: DIRECT
+2025-07-24 14:43:53,112 - src.core.question_generator - [33mWARNING[0m - question_generator.py:315 - 模板生成失败: AttributeError: DIRECT
+2025-07-24 14:43:53,113 - src.core.question_generator - [33mWARNING[0m - question_generator.py:315 - 模板生成失败: AttributeError: DIRECT
+2025-07-24 14:43:53,117 - request - [32mINFO[0m - logger.py:137 - RESPONSE 200 26117ms [req_id=req_1753339407000]
+2025-07-24 14:43:53,118 - performance - [32mINFO[0m - logger.py:167 - API_CALL POST /api/v1/chat/interact SUCCESS 26117ms
+2025-07-24 14:43:53,135 - src.api.v1.chat - [33mWARNING[0m - chat.py:560 - 保存对话槽位失败: 'SlotValueService' object has no attribute 'save_conversation_slots'
+2025-07-24 14:43:53,137 - src.api.v1.chat - [32mINFO[0m - chat.py:562 - 对话记录保存成功: 1
+2025-07-24 14:58:46,623 - src.main - [32mINFO[0m - main.py:33 - 正在启动智能意图识别系统...
+2025-07-24 14:58:46,632 - src.main - [32mINFO[0m - main.py:38 - 数据库连接初始化完成
+2025-07-24 14:58:47,223 - src.main - [32mINFO[0m - main.py:42 - 数据表检查完成
+2025-07-24 14:58:47,264 - src.services.cache_service - [32mINFO[0m - cache_service.py:73 - Redis缓存服务初始化成功
+2025-07-24 14:58:47,265 - src.main - [32mINFO[0m - main.py:47 - Redis缓存初始化完成
+2025-07-24 14:58:47,266 - src.services.startup_service - [32mINFO[0m - startup_service.py:26 - 开始初始化系统服务...
+2025-07-24 14:58:47,266 - src.services.startup_service - [32mINFO[0m - startup_service.py:50 - 缓存服务初始化完成
+2025-07-24 14:58:47,319 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:115 - 加载同义词词典完成: 47个同义词, 12个词组
+2025-07-24 14:58:47,330 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:154 - 加载停用词完成: 52个
+2025-07-24 14:58:47,336 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:192 - 加载实体模式完成: 10个
+2025-07-24 14:58:47,337 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:51 - 同义词数据重新加载完成
+2025-07-24 14:58:47,338 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:35 - 同义词服务初始化完成
+2025-07-24 14:58:47,340 - src.services.startup_service - [32mINFO[0m - startup_service.py:58 - ✅ 同义词服务初始化完成
+2025-07-24 14:58:47,341 - src.services.startup_service - [32mINFO[0m - startup_service.py:68 - 其他服务初始化完成
+2025-07-24 14:58:47,341 - src.services.startup_service - [32mINFO[0m - startup_service.py:38 - ✅ 所有系统服务初始化完成
+2025-07-24 14:58:47,342 - src.main - [32mINFO[0m - main.py:51 - 系统服务初始化完成
+2025-07-24 14:58:47,343 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:102 - LLM初始化完成 - 连接到: http://10.5.180.13:9997/v1/chat/completions
+2025-07-24 14:58:47,659 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:158 - ✅ LLM连接测试成功
+2025-07-24 14:58:47,665 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:142 - 加载了4个意图到缓存
+2025-07-24 14:58:47,667 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:118 - NLU引擎初始化完成
+2025-07-24 14:58:47,759 - src.services.audit_service - [32mINFO[0m - audit_service.py:77 - 记录审计日志成功: intents.0 INSERT by intent_service
+2025-07-24 14:58:47,760 - src.main - [32mINFO[0m - main.py:207 - 预热了 4 个活跃意图配置
+2025-07-24 14:58:47,770 - src.main - [32mINFO[0m - main.py:214 - 预热了 6 个系统配置
+2025-07-24 14:58:47,771 - src.main - [32mINFO[0m - main.py:55 - 缓存预热完成
+2025-07-24 14:58:47,773 - src.main - [32mINFO[0m - main.py:60 - NLU引擎初始化完成
+2025-07-24 14:58:47,774 - src.main - [32mINFO[0m - main.py:62 - 🚀 系统启动完成！监听端口: http://localhost:8000
+2025-07-24 14:58:47,774 - src.main - [32mINFO[0m - main.py:63 - 📚 API文档: http://localhost:8000/docs
+2025-07-24 15:00:42,853 - src.main - [32mINFO[0m - main.py:33 - 正在启动智能意图识别系统...
+2025-07-24 15:00:42,862 - src.main - [32mINFO[0m - main.py:38 - 数据库连接初始化完成
+2025-07-24 15:00:43,011 - src.main - [32mINFO[0m - main.py:42 - 数据表检查完成
+2025-07-24 15:00:46,821 - src.services.cache_service - [32mINFO[0m - cache_service.py:73 - Redis缓存服务初始化成功
+2025-07-24 15:00:46,822 - src.main - [32mINFO[0m - main.py:47 - Redis缓存初始化完成
+2025-07-24 15:00:46,822 - src.services.startup_service - [32mINFO[0m - startup_service.py:26 - 开始初始化系统服务...
+2025-07-24 15:00:46,823 - src.services.startup_service - [32mINFO[0m - startup_service.py:50 - 缓存服务初始化完成
+2025-07-24 15:00:46,881 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:115 - 加载同义词词典完成: 47个同义词, 12个词组
+2025-07-24 15:00:46,890 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:154 - 加载停用词完成: 52个
+2025-07-24 15:00:46,897 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:192 - 加载实体模式完成: 10个
+2025-07-24 15:00:46,898 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:51 - 同义词数据重新加载完成
+2025-07-24 15:00:46,899 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:35 - 同义词服务初始化完成
+2025-07-24 15:00:46,899 - src.services.startup_service - [32mINFO[0m - startup_service.py:58 - ✅ 同义词服务初始化完成
+2025-07-24 15:00:46,900 - src.services.startup_service - [32mINFO[0m - startup_service.py:68 - 其他服务初始化完成
+2025-07-24 15:00:46,901 - src.services.startup_service - [32mINFO[0m - startup_service.py:38 - ✅ 所有系统服务初始化完成
+2025-07-24 15:00:46,901 - src.main - [32mINFO[0m - main.py:51 - 系统服务初始化完成
+2025-07-24 15:00:46,902 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:102 - LLM初始化完成 - 连接到: http://10.5.180.13:9997/v1/chat/completions
+2025-07-24 15:00:47,224 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:158 - ✅ LLM连接测试成功
+2025-07-24 15:00:47,229 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:142 - 加载了4个意图到缓存
+2025-07-24 15:00:47,229 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:118 - NLU引擎初始化完成
+2025-07-24 15:00:47,239 - src.main - [32mINFO[0m - main.py:207 - 预热了 4 个活跃意图配置
+2025-07-24 15:00:47,249 - src.main - [32mINFO[0m - main.py:214 - 预热了 6 个系统配置
+2025-07-24 15:00:47,250 - src.main - [32mINFO[0m - main.py:55 - 缓存预热完成
+2025-07-24 15:00:47,251 - src.main - [32mINFO[0m - main.py:60 - NLU引擎初始化完成
+2025-07-24 15:00:47,251 - src.main - [32mINFO[0m - main.py:62 - 🚀 系统启动完成！监听端口: http://localhost:8000
+2025-07-24 15:00:47,252 - src.main - [32mINFO[0m - main.py:63 - 📚 API文档: http://localhost:8000/docs
+2025-07-24 15:00:58,686 - request - [32mINFO[0m - logger.py:131 - REQUEST POST http://localhost:8000/api/v1/chat/interact [req_id=req_1753340458686]
+2025-07-24 15:00:58,732 - src.services.cache_service - [32mINFO[0m - cache_service.py:73 - Redis缓存服务初始化成功
+2025-07-24 15:00:58,737 - src.api.v1.chat - [32mINFO[0m - chat.py:55 - 收到对话请求: req_1753340458_63e1b120, 用户: enterprise_user_001
+2025-07-24 15:01:01,422 - src.services.conversation_service - [32mINFO[0m - conversation_service.py:180 - 创建新用户: enterprise_user_001
+2025-07-24 15:01:01,482 - src.services.conversation_service - [32mINFO[0m - conversation_service.py:202 - 创建新会话: sess_e72bb96eb266 for user: enterprise_user_001
+2025-07-24 15:01:01,542 - src.services.user_preference_service - [32mINFO[0m - user_preference_service.py:251 - 保存默认用户偏好: enterprise_user_001, 项目数: 12
+2025-07-24 15:01:01,584 - src.services.user_preference_service - [32mINFO[0m - user_preference_service.py:78 - 获取用户偏好成功: enterprise_user_001, 项目数: 12
+2025-07-24 15:01:07,165 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:250 - 意图识别完成: 我想订一张明天去上海的机票 -> Intent(book_flight: 订机票) (0.852)
+2025-07-24 15:01:07,182 - src.services.intent_service - [32mINFO[0m - intent_service.py:372 - 阈值决策: 置信度 0.852 通过 intent-specific (book_flight)阈值 0.700 (等级: high)
+2025-07-24 15:01:07,204 - src.core.ambiguity_detector - [32mINFO[0m - ambiguity_detector.py:154 - 歧义检测完成: 综合得分=0.722, 主要类型=confidence, 信号数=7
+2025-07-24 15:01:07,206 - src.services.intent_service - [32mINFO[0m - intent_service.py:976 - 增强歧义检测: 歧义得分=0.722, 主要类型=confidence, 候选数=1
+2025-07-24 15:01:07,621 - src.services.intent_service - [32mINFO[0m - intent_service.py:106 - 意图识别完成: 我想订一张明天去上海的机票 -> book_flight
+2025-07-24 15:01:07,632 - src.services.intent_service - [32mINFO[0m - intent_service.py:193 - 历史增强意图识别完成: 我想订一张明天去上海的机票 -> book_flight (置信度: 0.852)
+2025-07-24 15:01:07,657 - src.services.audit_service - [32mINFO[0m - audit_service.py:77 - 记录审计日志成功: slot_definitions.1 INSERT by slot_service
+2025-07-24 15:01:07,670 - src.services.slot_service - [31mERROR[0m - slot_service.py:1035 - 获取槽位依赖关系失败: (1054, "Unknown column 't1.dependent_slot_id' in 'field list'")
+2025-07-24 15:01:07,672 - src.core.dependency_graph - [32mINFO[0m - dependency_graph.py:463 - 构建依赖图完成: intent_id=1, 节点数=4, 边数=0
+2025-07-24 15:01:07,695 - src.services.user_profile_service - [31mERROR[0m - user_profile_service.py:196 - 获取常用槽位值失败: enterprise_user_001, 错误: Unable to find foreign key between <Model: SlotValue> and <Model: Conversation>. Please specify an explicit join condition.
+2025-07-24 15:01:07,706 - src.core.slot_inheritance - [32mINFO[0m - slot_inheritance.py:507 - 完成继承处理: 用户=enterprise_user_001, 继承槽位=0, 应用规则=0
+2025-07-24 15:01:11,108 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:556 - 实体提取完成: '我想订一张明天去上海的机票...' -> 3 个实体
+2025-07-24 15:01:18,491 - src.services.slot_service - [32mINFO[0m - slot_service.py:145 - 增强槽位提取完成: book_flight, 提取=3个, 继承=0个, 缺失=1个
+2025-07-24 15:01:18,526 - src.api.v1.chat - [33mWARNING[0m - chat.py:408 - 更新会话槽位失败: SlotValueService.update_session_slots() takes 3 positional arguments but 4 were given
+2025-07-24 15:01:18,538 - src.core.question_generator - [33mWARNING[0m - question_generator.py:315 - 模板生成失败: AttributeError: DIRECT
+2025-07-24 15:01:18,539 - src.core.question_generator - [33mWARNING[0m - question_generator.py:315 - 模板生成失败: AttributeError: DIRECT
+2025-07-24 15:01:18,539 - src.core.question_generator - [33mWARNING[0m - question_generator.py:315 - 模板生成失败: AttributeError: DIRECT
+2025-07-24 15:01:18,540 - src.core.question_generator - [33mWARNING[0m - question_generator.py:315 - 模板生成失败: AttributeError: DIRECT
+2025-07-24 15:01:18,541 - src.core.question_generator - [33mWARNING[0m - question_generator.py:315 - 模板生成失败: AttributeError: DIRECT
+2025-07-24 15:01:18,542 - src.core.question_generator - [33mWARNING[0m - question_generator.py:315 - 模板生成失败: AttributeError: DIRECT
+2025-07-24 15:01:18,550 - request - [32mINFO[0m - logger.py:137 - RESPONSE 200 19864ms [req_id=req_1753340458686]
+2025-07-24 15:01:18,551 - performance - [32mINFO[0m - logger.py:167 - API_CALL POST /api/v1/chat/interact SUCCESS 19864ms
+2025-07-24 15:01:18,568 - src.api.v1.chat - [32mINFO[0m - chat.py:562 - 对话记录保存成功: 1
+2025-07-24 15:03:19,541 - src.main - [32mINFO[0m - main.py:72 - 正在关闭系统...
+2025-07-24 15:03:19,556 - src.services.cache_service - [32mINFO[0m - cache_service.py:87 - Redis连接已关闭
+2025-07-24 15:03:19,557 - src.main - [32mINFO[0m - main.py:88 - 系统关闭完成
+2025-07-24 15:03:33,014 - src.main - [32mINFO[0m - main.py:33 - 正在启动智能意图识别系统...
+2025-07-24 15:03:33,024 - src.main - [32mINFO[0m - main.py:38 - 数据库连接初始化完成
+2025-07-24 15:03:33,143 - src.main - [32mINFO[0m - main.py:42 - 数据表检查完成
+2025-07-24 15:03:35,782 - src.services.cache_service - [32mINFO[0m - cache_service.py:73 - Redis缓存服务初始化成功
+2025-07-24 15:03:35,783 - src.main - [32mINFO[0m - main.py:47 - Redis缓存初始化完成
+2025-07-24 15:03:35,784 - src.services.startup_service - [32mINFO[0m - startup_service.py:26 - 开始初始化系统服务...
+2025-07-24 15:03:35,784 - src.services.startup_service - [32mINFO[0m - startup_service.py:50 - 缓存服务初始化完成
+2025-07-24 15:03:35,832 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:115 - 加载同义词词典完成: 47个同义词, 12个词组
+2025-07-24 15:03:35,841 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:154 - 加载停用词完成: 52个
+2025-07-24 15:03:35,847 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:192 - 加载实体模式完成: 10个
+2025-07-24 15:03:35,848 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:51 - 同义词数据重新加载完成
+2025-07-24 15:03:35,849 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:35 - 同义词服务初始化完成
+2025-07-24 15:03:35,850 - src.services.startup_service - [32mINFO[0m - startup_service.py:58 - ✅ 同义词服务初始化完成
+2025-07-24 15:03:35,850 - src.services.startup_service - [32mINFO[0m - startup_service.py:68 - 其他服务初始化完成
+2025-07-24 15:03:35,851 - src.services.startup_service - [32mINFO[0m - startup_service.py:38 - ✅ 所有系统服务初始化完成
+2025-07-24 15:03:35,852 - src.main - [32mINFO[0m - main.py:51 - 系统服务初始化完成
+2025-07-24 15:03:35,854 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:102 - LLM初始化完成 - 连接到: http://10.5.180.13:9997/v1/chat/completions
+2025-07-24 15:03:36,152 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:158 - ✅ LLM连接测试成功
+2025-07-24 15:03:36,157 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:142 - 加载了4个意图到缓存
+2025-07-24 15:03:36,158 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:118 - NLU引擎初始化完成
+2025-07-24 15:03:36,799 - src.main - [32mINFO[0m - main.py:207 - 预热了 4 个活跃意图配置
+2025-07-24 15:03:36,807 - src.main - [32mINFO[0m - main.py:214 - 预热了 6 个系统配置
+2025-07-24 15:03:36,808 - src.main - [32mINFO[0m - main.py:55 - 缓存预热完成
+2025-07-24 15:03:36,808 - src.main - [32mINFO[0m - main.py:60 - NLU引擎初始化完成
+2025-07-24 15:03:36,809 - src.main - [32mINFO[0m - main.py:62 - 🚀 系统启动完成！监听端口: http://localhost:8000
+2025-07-24 15:03:36,810 - src.main - [32mINFO[0m - main.py:63 - 📚 API文档: http://localhost:8000/docs
+2025-07-24 15:03:42,868 - src.main - [32mINFO[0m - main.py:33 - 正在启动智能意图识别系统...
+2025-07-24 15:03:42,874 - src.main - [32mINFO[0m - main.py:38 - 数据库连接初始化完成
+2025-07-24 15:03:42,965 - src.main - [32mINFO[0m - main.py:42 - 数据表检查完成
+2025-07-24 15:03:45,027 - src.services.cache_service - [32mINFO[0m - cache_service.py:73 - Redis缓存服务初始化成功
+2025-07-24 15:03:45,029 - src.main - [32mINFO[0m - main.py:47 - Redis缓存初始化完成
+2025-07-24 15:03:45,029 - src.services.startup_service - [32mINFO[0m - startup_service.py:26 - 开始初始化系统服务...
+2025-07-24 15:03:45,030 - src.services.startup_service - [32mINFO[0m - startup_service.py:50 - 缓存服务初始化完成
+2025-07-24 15:03:45,077 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:115 - 加载同义词词典完成: 47个同义词, 12个词组
+2025-07-24 15:03:45,088 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:154 - 加载停用词完成: 52个
+2025-07-24 15:03:45,094 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:192 - 加载实体模式完成: 10个
+2025-07-24 15:03:45,095 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:51 - 同义词数据重新加载完成
+2025-07-24 15:03:45,096 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:35 - 同义词服务初始化完成
+2025-07-24 15:03:45,096 - src.services.startup_service - [32mINFO[0m - startup_service.py:58 - ✅ 同义词服务初始化完成
+2025-07-24 15:03:45,097 - src.services.startup_service - [32mINFO[0m - startup_service.py:68 - 其他服务初始化完成
+2025-07-24 15:03:45,097 - src.services.startup_service - [32mINFO[0m - startup_service.py:38 - ✅ 所有系统服务初始化完成
+2025-07-24 15:03:45,098 - src.main - [32mINFO[0m - main.py:51 - 系统服务初始化完成
+2025-07-24 15:03:45,098 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:102 - LLM初始化完成 - 连接到: http://10.5.180.13:9997/v1/chat/completions
+2025-07-24 15:03:45,375 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:158 - ✅ LLM连接测试成功
+2025-07-24 15:03:45,380 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:142 - 加载了4个意图到缓存
+2025-07-24 15:03:45,380 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:118 - NLU引擎初始化完成
+2025-07-24 15:03:45,429 - src.main - [32mINFO[0m - main.py:207 - 预热了 4 个活跃意图配置
+2025-07-24 15:03:45,438 - src.main - [32mINFO[0m - main.py:214 - 预热了 6 个系统配置
+2025-07-24 15:03:45,439 - src.main - [32mINFO[0m - main.py:55 - 缓存预热完成
+2025-07-24 15:03:45,440 - src.main - [32mINFO[0m - main.py:60 - NLU引擎初始化完成
+2025-07-24 15:03:45,441 - src.main - [32mINFO[0m - main.py:62 - 🚀 系统启动完成！监听端口: http://localhost:8000
+2025-07-24 15:03:45,442 - src.main - [32mINFO[0m - main.py:63 - 📚 API文档: http://localhost:8000/docs
+2025-07-24 15:04:06,198 - src.main - [32mINFO[0m - main.py:72 - 正在关闭系统...
+2025-07-24 15:04:06,201 - src.services.cache_service - [32mINFO[0m - cache_service.py:87 - Redis连接已关闭
+2025-07-24 15:04:06,202 - src.main - [32mINFO[0m - main.py:88 - 系统关闭完成
+2025-07-24 15:04:12,869 - src.main - [32mINFO[0m - main.py:33 - 正在启动智能意图识别系统...
+2025-07-24 15:04:12,876 - src.main - [32mINFO[0m - main.py:38 - 数据库连接初始化完成
+2025-07-24 15:04:12,966 - src.main - [32mINFO[0m - main.py:42 - 数据表检查完成
+2025-07-24 15:04:13,091 - src.services.cache_service - [32mINFO[0m - cache_service.py:73 - Redis缓存服务初始化成功
+2025-07-24 15:04:13,092 - src.main - [32mINFO[0m - main.py:47 - Redis缓存初始化完成
+2025-07-24 15:04:13,092 - src.services.startup_service - [32mINFO[0m - startup_service.py:26 - 开始初始化系统服务...
+2025-07-24 15:04:13,093 - src.services.startup_service - [32mINFO[0m - startup_service.py:50 - 缓存服务初始化完成
+2025-07-24 15:04:13,136 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:115 - 加载同义词词典完成: 47个同义词, 12个词组
+2025-07-24 15:04:13,145 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:154 - 加载停用词完成: 52个
+2025-07-24 15:04:13,153 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:192 - 加载实体模式完成: 10个
+2025-07-24 15:04:13,154 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:51 - 同义词数据重新加载完成
+2025-07-24 15:04:13,155 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:35 - 同义词服务初始化完成
+2025-07-24 15:04:13,155 - src.services.startup_service - [32mINFO[0m - startup_service.py:58 - ✅ 同义词服务初始化完成
+2025-07-24 15:04:13,156 - src.services.startup_service - [32mINFO[0m - startup_service.py:68 - 其他服务初始化完成
+2025-07-24 15:04:13,157 - src.services.startup_service - [32mINFO[0m - startup_service.py:38 - ✅ 所有系统服务初始化完成
+2025-07-24 15:04:13,204 - src.main - [32mINFO[0m - main.py:51 - 系统服务初始化完成
+2025-07-24 15:04:13,206 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:102 - LLM初始化完成 - 连接到: http://10.5.180.13:9997/v1/chat/completions
+2025-07-24 15:04:13,533 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:158 - ✅ LLM连接测试成功
+2025-07-24 15:04:13,543 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:142 - 加载了4个意图到缓存
+2025-07-24 15:04:13,544 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:118 - NLU引擎初始化完成
+2025-07-24 15:04:13,599 - src.main - [32mINFO[0m - main.py:207 - 预热了 4 个活跃意图配置
+2025-07-24 15:04:13,609 - src.main - [32mINFO[0m - main.py:214 - 预热了 6 个系统配置
+2025-07-24 15:04:13,609 - src.main - [32mINFO[0m - main.py:55 - 缓存预热完成
+2025-07-24 15:04:13,610 - src.main - [32mINFO[0m - main.py:60 - NLU引擎初始化完成
+2025-07-24 15:04:13,611 - src.main - [32mINFO[0m - main.py:62 - 🚀 系统启动完成！监听端口: http://localhost:8000
+2025-07-24 15:04:13,612 - src.main - [32mINFO[0m - main.py:63 - 📚 API文档: http://localhost:8000/docs
+2025-07-24 15:04:13,916 - src.main - [32mINFO[0m - main.py:72 - 正在关闭系统...
+2025-07-24 15:04:13,921 - src.services.cache_service - [32mINFO[0m - cache_service.py:87 - Redis连接已关闭
+2025-07-24 15:04:13,922 - src.main - [32mINFO[0m - main.py:88 - 系统关闭完成
+2025-07-24 15:04:20,016 - src.main - [32mINFO[0m - main.py:33 - 正在启动智能意图识别系统...
+2025-07-24 15:04:20,023 - src.main - [32mINFO[0m - main.py:38 - 数据库连接初始化完成
+2025-07-24 15:04:20,195 - src.main - [32mINFO[0m - main.py:42 - 数据表检查完成
+2025-07-24 15:04:20,261 - src.services.cache_service - [32mINFO[0m - cache_service.py:73 - Redis缓存服务初始化成功
+2025-07-24 15:04:20,262 - src.main - [32mINFO[0m - main.py:47 - Redis缓存初始化完成
+2025-07-24 15:04:20,263 - src.services.startup_service - [32mINFO[0m - startup_service.py:26 - 开始初始化系统服务...
+2025-07-24 15:04:20,264 - src.services.startup_service - [32mINFO[0m - startup_service.py:50 - 缓存服务初始化完成
+2025-07-24 15:04:20,314 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:115 - 加载同义词词典完成: 47个同义词, 12个词组
+2025-07-24 15:04:20,324 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:154 - 加载停用词完成: 52个
+2025-07-24 15:04:20,330 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:192 - 加载实体模式完成: 10个
+2025-07-24 15:04:20,331 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:51 - 同义词数据重新加载完成
+2025-07-24 15:04:20,332 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:35 - 同义词服务初始化完成
+2025-07-24 15:04:20,332 - src.services.startup_service - [32mINFO[0m - startup_service.py:58 - ✅ 同义词服务初始化完成
+2025-07-24 15:04:20,333 - src.services.startup_service - [32mINFO[0m - startup_service.py:68 - 其他服务初始化完成
+2025-07-24 15:04:20,333 - src.services.startup_service - [32mINFO[0m - startup_service.py:38 - ✅ 所有系统服务初始化完成
+2025-07-24 15:04:20,334 - src.main - [32mINFO[0m - main.py:51 - 系统服务初始化完成
+2025-07-24 15:04:20,335 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:102 - LLM初始化完成 - 连接到: http://10.5.180.13:9997/v1/chat/completions
+2025-07-24 15:04:20,605 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:158 - ✅ LLM连接测试成功
+2025-07-24 15:04:20,611 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:142 - 加载了4个意图到缓存
+2025-07-24 15:04:20,612 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:118 - NLU引擎初始化完成
+2025-07-24 15:04:21,858 - src.main - [32mINFO[0m - main.py:207 - 预热了 4 个活跃意图配置
+2025-07-24 15:04:21,866 - src.main - [32mINFO[0m - main.py:214 - 预热了 6 个系统配置
+2025-07-24 15:04:21,867 - src.main - [32mINFO[0m - main.py:55 - 缓存预热完成
+2025-07-24 15:04:21,867 - src.main - [32mINFO[0m - main.py:60 - NLU引擎初始化完成
+2025-07-24 15:04:21,868 - src.main - [32mINFO[0m - main.py:62 - 🚀 系统启动完成！监听端口: http://localhost:8000
+2025-07-24 15:04:21,868 - src.main - [32mINFO[0m - main.py:63 - 📚 API文档: http://localhost:8000/docs
+2025-07-24 15:04:43,366 - src.main - [32mINFO[0m - main.py:72 - 正在关闭系统...
+2025-07-24 15:04:43,370 - src.services.cache_service - [32mINFO[0m - cache_service.py:87 - Redis连接已关闭
+2025-07-24 15:04:43,371 - src.main - [32mINFO[0m - main.py:88 - 系统关闭完成
+2025-07-24 15:04:50,674 - src.main - [32mINFO[0m - main.py:33 - 正在启动智能意图识别系统...
+2025-07-24 15:04:50,802 - src.main - [32mINFO[0m - main.py:38 - 数据库连接初始化完成
+2025-07-24 15:04:51,097 - src.main - [32mINFO[0m - main.py:42 - 数据表检查完成
+2025-07-24 15:04:53,605 - src.services.cache_service - [32mINFO[0m - cache_service.py:73 - Redis缓存服务初始化成功
+2025-07-24 15:04:53,606 - src.main - [32mINFO[0m - main.py:47 - Redis缓存初始化完成
+2025-07-24 15:04:53,606 - src.services.startup_service - [32mINFO[0m - startup_service.py:26 - 开始初始化系统服务...
+2025-07-24 15:04:53,607 - src.services.startup_service - [32mINFO[0m - startup_service.py:50 - 缓存服务初始化完成
+2025-07-24 15:04:53,659 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:115 - 加载同义词词典完成: 47个同义词, 12个词组
+2025-07-24 15:04:53,669 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:154 - 加载停用词完成: 52个
+2025-07-24 15:04:53,676 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:192 - 加载实体模式完成: 10个
+2025-07-24 15:04:53,676 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:51 - 同义词数据重新加载完成
+2025-07-24 15:04:53,677 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:35 - 同义词服务初始化完成
+2025-07-24 15:04:53,678 - src.services.startup_service - [32mINFO[0m - startup_service.py:58 - ✅ 同义词服务初始化完成
+2025-07-24 15:04:53,679 - src.services.startup_service - [32mINFO[0m - startup_service.py:68 - 其他服务初始化完成
+2025-07-24 15:04:53,680 - src.services.startup_service - [32mINFO[0m - startup_service.py:38 - ✅ 所有系统服务初始化完成
+2025-07-24 15:04:53,681 - src.main - [32mINFO[0m - main.py:51 - 系统服务初始化完成
+2025-07-24 15:04:53,681 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:102 - LLM初始化完成 - 连接到: http://10.5.180.13:9997/v1/chat/completions
+2025-07-24 15:04:53,989 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:158 - ✅ LLM连接测试成功
+2025-07-24 15:04:53,995 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:142 - 加载了4个意图到缓存
+2025-07-24 15:04:53,996 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:118 - NLU引擎初始化完成
+2025-07-24 15:04:54,625 - src.main - [32mINFO[0m - main.py:207 - 预热了 4 个活跃意图配置
+2025-07-24 15:04:54,636 - src.main - [32mINFO[0m - main.py:214 - 预热了 6 个系统配置
+2025-07-24 15:04:54,637 - src.main - [32mINFO[0m - main.py:55 - 缓存预热完成
+2025-07-24 15:04:54,637 - src.main - [32mINFO[0m - main.py:60 - NLU引擎初始化完成
+2025-07-24 15:04:54,638 - src.main - [32mINFO[0m - main.py:62 - 🚀 系统启动完成！监听端口: http://localhost:8000
+2025-07-24 15:04:54,639 - src.main - [32mINFO[0m - main.py:63 - 📚 API文档: http://localhost:8000/docs
+2025-07-24 15:05:19,417 - request - [32mINFO[0m - logger.py:131 - REQUEST POST http://localhost:8000/api/v1/chat/interact [req_id=req_1753340719417]
+2025-07-24 15:05:19,445 - src.services.cache_service - [32mINFO[0m - cache_service.py:73 - Redis缓存服务初始化成功
+2025-07-24 15:05:19,449 - src.api.v1.chat - [32mINFO[0m - chat.py:55 - 收到对话请求: req_1753340719_f8c2540c, 用户: test_user_001
+2025-07-24 15:05:47,788 - src.services.conversation_service - [32mINFO[0m - conversation_service.py:180 - 创建新用户: test_user_001
+2025-07-24 15:05:47,871 - src.services.conversation_service - [32mINFO[0m - conversation_service.py:202 - 创建新会话: sess_40816f4511bb for user: test_user_001
+2025-07-24 15:05:48,129 - src.services.user_preference_service - [32mINFO[0m - user_preference_service.py:251 - 保存默认用户偏好: test_user_001, 项目数: 12
+2025-07-24 15:06:15,532 - src.main - [32mINFO[0m - main.py:33 - 正在启动智能意图识别系统...
+2025-07-24 15:06:15,537 - src.main - [32mINFO[0m - main.py:38 - 数据库连接初始化完成
+2025-07-24 15:06:15,663 - src.main - [32mINFO[0m - main.py:42 - 数据表检查完成
+2025-07-24 15:06:15,710 - src.services.cache_service - [32mINFO[0m - cache_service.py:73 - Redis缓存服务初始化成功
+2025-07-24 15:06:15,711 - src.main - [32mINFO[0m - main.py:47 - Redis缓存初始化完成
+2025-07-24 15:06:15,712 - src.services.startup_service - [32mINFO[0m - startup_service.py:26 - 开始初始化系统服务...
+2025-07-24 15:06:15,714 - src.services.startup_service - [32mINFO[0m - startup_service.py:50 - 缓存服务初始化完成
+2025-07-24 15:06:15,774 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:115 - 加载同义词词典完成: 47个同义词, 12个词组
+2025-07-24 15:06:15,783 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:154 - 加载停用词完成: 52个
+2025-07-24 15:06:15,789 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:192 - 加载实体模式完成: 10个
+2025-07-24 15:06:15,791 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:51 - 同义词数据重新加载完成
+2025-07-24 15:06:15,791 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:35 - 同义词服务初始化完成
+2025-07-24 15:06:15,791 - src.services.startup_service - [32mINFO[0m - startup_service.py:58 - ✅ 同义词服务初始化完成
+2025-07-24 15:06:15,792 - src.services.startup_service - [32mINFO[0m - startup_service.py:68 - 其他服务初始化完成
+2025-07-24 15:06:15,792 - src.services.startup_service - [32mINFO[0m - startup_service.py:38 - ✅ 所有系统服务初始化完成
+2025-07-24 15:06:15,793 - src.main - [32mINFO[0m - main.py:51 - 系统服务初始化完成
+2025-07-24 15:06:15,794 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:102 - LLM初始化完成 - 连接到: http://10.5.180.13:9997/v1/chat/completions
+2025-07-24 15:06:16,111 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:158 - ✅ LLM连接测试成功
+2025-07-24 15:06:16,120 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:142 - 加载了4个意图到缓存
+2025-07-24 15:06:16,121 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:118 - NLU引擎初始化完成
+2025-07-24 15:06:16,131 - src.main - [32mINFO[0m - main.py:207 - 预热了 4 个活跃意图配置
+2025-07-24 15:06:16,142 - src.main - [32mINFO[0m - main.py:214 - 预热了 6 个系统配置
+2025-07-24 15:06:16,143 - src.main - [32mINFO[0m - main.py:55 - 缓存预热完成
+2025-07-24 15:06:16,145 - src.main - [32mINFO[0m - main.py:60 - NLU引擎初始化完成
+2025-07-24 15:06:16,146 - src.main - [32mINFO[0m - main.py:62 - 🚀 系统启动完成！监听端口: http://localhost:8000
+2025-07-24 15:06:16,148 - src.main - [32mINFO[0m - main.py:63 - 📚 API文档: http://localhost:8000/docs
+2025-07-24 15:06:36,721 - request - [32mINFO[0m - logger.py:131 - REQUEST POST http://localhost:8000/api/v1/chat/interact [req_id=req_1753340796721]
+2025-07-24 15:06:38,054 - src.services.cache_service - [32mINFO[0m - cache_service.py:73 - Redis缓存服务初始化成功
+2025-07-24 15:06:38,059 - src.api.v1.chat - [32mINFO[0m - chat.py:55 - 收到对话请求: req_1753340798_168cb243, 用户: enterprise_user_001
+2025-07-24 15:06:39,527 - src.services.conversation_service - [32mINFO[0m - conversation_service.py:140 - 找到用户最近活跃会话: sess_e72bb96eb266
+2025-07-24 15:06:43,168 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:250 - 意图识别完成: 我想订一张明天去上海的机票 -> Intent(book_flight: 订机票) (0.852)
+2025-07-24 15:06:43,177 - src.services.intent_service - [32mINFO[0m - intent_service.py:372 - 阈值决策: 置信度 0.852 通过 intent-specific (book_flight)阈值 0.700 (等级: high)
+2025-07-24 15:06:45,215 - src.services.intent_service - [32mINFO[0m - intent_service.py:106 - 意图识别完成: 我想订一张明天去上海的机票 -> book_flight
+2025-07-24 15:06:46,990 - src.services.intent_service - [32mINFO[0m - intent_service.py:193 - 历史增强意图识别完成: 我想订一张明天去上海的机票 -> book_flight (置信度: 0.852)
+2025-07-24 15:06:47,006 - src.services.slot_service - [31mERROR[0m - slot_service.py:1035 - 获取槽位依赖关系失败: type object 'SlotDependency' has no attribute 'dependent_slot'
+2025-07-24 15:06:47,008 - src.core.dependency_graph - [32mINFO[0m - dependency_graph.py:463 - 构建依赖图完成: intent_id=1, 节点数=4, 边数=0
+2025-07-24 15:06:47,023 - src.core.slot_inheritance - [31mERROR[0m - slot_inheritance.py:538 - 获取对话上下文失败: 'Conversation' object has no attribute 'slots_filled'
+2025-07-24 15:06:47,033 - src.core.slot_inheritance - [32mINFO[0m - slot_inheritance.py:507 - 完成继承处理: 用户=enterprise_user_001, 继承槽位=0, 应用规则=0
+2025-07-24 15:06:50,930 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:556 - 实体提取完成: '我想订一张明天去上海的机票...' -> 3 个实体
+2025-07-24 15:06:56,241 - src.services.slot_service - [32mINFO[0m - slot_service.py:145 - 增强槽位提取完成: book_flight, 提取=2个, 继承=0个, 缺失=2个
+2025-07-24 15:06:56,329 - src.core.question_generator - [33mWARNING[0m - question_generator.py:315 - 模板生成失败: AttributeError: DIRECT
+2025-07-24 15:06:56,330 - src.core.question_generator - [33mWARNING[0m - question_generator.py:315 - 模板生成失败: AttributeError: DIRECT
+2025-07-24 15:06:56,331 - src.core.question_generator - [33mWARNING[0m - question_generator.py:315 - 模板生成失败: AttributeError: DIRECT
+2025-07-24 15:06:56,333 - src.core.question_generator - [33mWARNING[0m - question_generator.py:315 - 模板生成失败: AttributeError: DIRECT
+2025-07-24 15:06:56,334 - src.core.question_generator - [33mWARNING[0m - question_generator.py:315 - 模板生成失败: AttributeError: DIRECT
+2025-07-24 15:06:56,336 - src.core.question_generator - [33mWARNING[0m - question_generator.py:315 - 模板生成失败: AttributeError: DIRECT
+2025-07-24 15:06:56,348 - request - [32mINFO[0m - logger.py:137 - RESPONSE 200 19627ms [req_id=req_1753340796721]
+2025-07-24 15:06:56,350 - performance - [32mINFO[0m - logger.py:167 - API_CALL POST /api/v1/chat/interact SUCCESS 19627ms
+2025-07-24 15:06:56,376 - src.api.v1.chat - [32mINFO[0m - chat.py:562 - 对话记录保存成功: 2
+2025-07-24 15:08:02,855 - src.main - [32mINFO[0m - main.py:72 - 正在关闭系统...
+2025-07-24 15:08:02,876 - src.services.cache_service - [32mINFO[0m - cache_service.py:87 - Redis连接已关闭
+2025-07-24 15:08:02,876 - src.main - [32mINFO[0m - main.py:88 - 系统关闭完成
+2025-07-24 15:08:10,639 - src.main - [32mINFO[0m - main.py:33 - 正在启动智能意图识别系统...
+2025-07-24 15:08:10,649 - src.main - [32mINFO[0m - main.py:38 - 数据库连接初始化完成
+2025-07-24 15:08:10,747 - src.main - [32mINFO[0m - main.py:42 - 数据表检查完成
+2025-07-24 15:08:12,261 - src.services.cache_service - [32mINFO[0m - cache_service.py:73 - Redis缓存服务初始化成功
+2025-07-24 15:08:12,262 - src.main - [32mINFO[0m - main.py:47 - Redis缓存初始化完成
+2025-07-24 15:08:12,263 - src.services.startup_service - [32mINFO[0m - startup_service.py:26 - 开始初始化系统服务...
+2025-07-24 15:08:12,264 - src.services.startup_service - [32mINFO[0m - startup_service.py:50 - 缓存服务初始化完成
+2025-07-24 15:08:12,315 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:115 - 加载同义词词典完成: 47个同义词, 12个词组
+2025-07-24 15:08:12,325 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:154 - 加载停用词完成: 52个
+2025-07-24 15:08:12,330 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:192 - 加载实体模式完成: 10个
+2025-07-24 15:08:12,331 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:51 - 同义词数据重新加载完成
+2025-07-24 15:08:12,331 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:35 - 同义词服务初始化完成
+2025-07-24 15:08:12,332 - src.services.startup_service - [32mINFO[0m - startup_service.py:58 - ✅ 同义词服务初始化完成
+2025-07-24 15:08:12,332 - src.services.startup_service - [32mINFO[0m - startup_service.py:68 - 其他服务初始化完成
+2025-07-24 15:08:12,333 - src.services.startup_service - [32mINFO[0m - startup_service.py:38 - ✅ 所有系统服务初始化完成
+2025-07-24 15:08:12,334 - src.main - [32mINFO[0m - main.py:51 - 系统服务初始化完成
+2025-07-24 15:08:12,334 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:102 - LLM初始化完成 - 连接到: http://10.5.180.13:9997/v1/chat/completions
+2025-07-24 15:08:12,614 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:158 - ✅ LLM连接测试成功
+2025-07-24 15:08:12,619 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:142 - 加载了4个意图到缓存
+2025-07-24 15:08:12,619 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:118 - NLU引擎初始化完成
+2025-07-24 15:08:13,288 - src.main - [32mINFO[0m - main.py:207 - 预热了 4 个活跃意图配置
+2025-07-24 15:08:13,295 - src.main - [32mINFO[0m - main.py:214 - 预热了 6 个系统配置
+2025-07-24 15:08:13,296 - src.main - [32mINFO[0m - main.py:55 - 缓存预热完成
+2025-07-24 15:08:13,296 - src.main - [32mINFO[0m - main.py:60 - NLU引擎初始化完成
+2025-07-24 15:08:13,297 - src.main - [32mINFO[0m - main.py:62 - 🚀 系统启动完成！监听端口: http://localhost:8000
+2025-07-24 15:08:13,297 - src.main - [32mINFO[0m - main.py:63 - 📚 API文档: http://localhost:8000/docs
+2025-07-24 15:08:14,669 - src.main - [32mINFO[0m - main.py:72 - 正在关闭系统...
+2025-07-24 15:08:14,672 - src.services.cache_service - [32mINFO[0m - cache_service.py:87 - Redis连接已关闭
+2025-07-24 15:08:14,673 - src.main - [32mINFO[0m - main.py:88 - 系统关闭完成
+2025-07-24 15:08:21,854 - src.main - [32mINFO[0m - main.py:33 - 正在启动智能意图识别系统...
+2025-07-24 15:08:21,859 - src.main - [32mINFO[0m - main.py:38 - 数据库连接初始化完成
+2025-07-24 15:08:21,941 - src.main - [32mINFO[0m - main.py:42 - 数据表检查完成
+2025-07-24 15:08:21,959 - src.services.cache_service - [32mINFO[0m - cache_service.py:73 - Redis缓存服务初始化成功
+2025-07-24 15:08:21,960 - src.main - [32mINFO[0m - main.py:47 - Redis缓存初始化完成
+2025-07-24 15:08:21,960 - src.services.startup_service - [32mINFO[0m - startup_service.py:26 - 开始初始化系统服务...
+2025-07-24 15:08:21,961 - src.services.startup_service - [32mINFO[0m - startup_service.py:50 - 缓存服务初始化完成
+2025-07-24 15:08:22,002 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:115 - 加载同义词词典完成: 47个同义词, 12个词组
+2025-07-24 15:08:22,012 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:154 - 加载停用词完成: 52个
+2025-07-24 15:08:22,018 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:192 - 加载实体模式完成: 10个
+2025-07-24 15:08:22,019 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:51 - 同义词数据重新加载完成
+2025-07-24 15:08:22,020 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:35 - 同义词服务初始化完成
+2025-07-24 15:08:22,021 - src.services.startup_service - [32mINFO[0m - startup_service.py:58 - ✅ 同义词服务初始化完成
+2025-07-24 15:08:22,022 - src.services.startup_service - [32mINFO[0m - startup_service.py:68 - 其他服务初始化完成
+2025-07-24 15:08:22,022 - src.services.startup_service - [32mINFO[0m - startup_service.py:38 - ✅ 所有系统服务初始化完成
+2025-07-24 15:08:22,023 - src.main - [32mINFO[0m - main.py:51 - 系统服务初始化完成
+2025-07-24 15:08:22,024 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:102 - LLM初始化完成 - 连接到: http://10.5.180.13:9997/v1/chat/completions
+2025-07-24 15:08:22,308 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:158 - ✅ LLM连接测试成功
+2025-07-24 15:08:22,313 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:142 - 加载了4个意图到缓存
+2025-07-24 15:08:22,314 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:118 - NLU引擎初始化完成
+2025-07-24 15:08:22,324 - src.main - [32mINFO[0m - main.py:207 - 预热了 4 个活跃意图配置
+2025-07-24 15:08:22,333 - src.main - [32mINFO[0m - main.py:214 - 预热了 6 个系统配置
+2025-07-24 15:08:22,334 - src.main - [32mINFO[0m - main.py:55 - 缓存预热完成
+2025-07-24 15:08:22,334 - src.main - [32mINFO[0m - main.py:60 - NLU引擎初始化完成
+2025-07-24 15:08:22,335 - src.main - [32mINFO[0m - main.py:62 - 🚀 系统启动完成！监听端口: http://localhost:8000
+2025-07-24 15:08:22,335 - src.main - [32mINFO[0m - main.py:63 - 📚 API文档: http://localhost:8000/docs
+2025-07-24 15:08:24,455 - src.main - [32mINFO[0m - main.py:72 - 正在关闭系统...
+2025-07-24 15:08:24,459 - src.services.cache_service - [32mINFO[0m - cache_service.py:87 - Redis连接已关闭
+2025-07-24 15:08:24,459 - src.main - [32mINFO[0m - main.py:88 - 系统关闭完成
+2025-07-24 15:08:30,999 - src.main - [32mINFO[0m - main.py:33 - 正在启动智能意图识别系统...
+2025-07-24 15:08:31,005 - src.main - [32mINFO[0m - main.py:38 - 数据库连接初始化完成
+2025-07-24 15:08:31,080 - src.main - [32mINFO[0m - main.py:42 - 数据表检查完成
+2025-07-24 15:08:31,101 - src.services.cache_service - [32mINFO[0m - cache_service.py:73 - Redis缓存服务初始化成功
+2025-07-24 15:08:31,101 - src.main - [32mINFO[0m - main.py:47 - Redis缓存初始化完成
+2025-07-24 15:08:31,102 - src.services.startup_service - [32mINFO[0m - startup_service.py:26 - 开始初始化系统服务...
+2025-07-24 15:08:31,102 - src.services.startup_service - [32mINFO[0m - startup_service.py:50 - 缓存服务初始化完成
+2025-07-24 15:08:31,152 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:115 - 加载同义词词典完成: 47个同义词, 12个词组
+2025-07-24 15:08:31,163 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:154 - 加载停用词完成: 52个
+2025-07-24 15:08:31,168 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:192 - 加载实体模式完成: 10个
+2025-07-24 15:08:31,169 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:51 - 同义词数据重新加载完成
+2025-07-24 15:08:31,169 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:35 - 同义词服务初始化完成
+2025-07-24 15:08:31,170 - src.services.startup_service - [32mINFO[0m - startup_service.py:58 - ✅ 同义词服务初始化完成
+2025-07-24 15:08:31,170 - src.services.startup_service - [32mINFO[0m - startup_service.py:68 - 其他服务初始化完成
+2025-07-24 15:08:31,171 - src.services.startup_service - [32mINFO[0m - startup_service.py:38 - ✅ 所有系统服务初始化完成
+2025-07-24 15:08:31,171 - src.main - [32mINFO[0m - main.py:51 - 系统服务初始化完成
+2025-07-24 15:08:31,172 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:102 - LLM初始化完成 - 连接到: http://10.5.180.13:9997/v1/chat/completions
+2025-07-24 15:08:31,462 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:158 - ✅ LLM连接测试成功
+2025-07-24 15:08:31,468 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:142 - 加载了4个意图到缓存
+2025-07-24 15:08:31,469 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:118 - NLU引擎初始化完成
+2025-07-24 15:08:31,475 - src.main - [32mINFO[0m - main.py:207 - 预热了 4 个活跃意图配置
+2025-07-24 15:08:31,484 - src.main - [32mINFO[0m - main.py:214 - 预热了 6 个系统配置
+2025-07-24 15:08:31,485 - src.main - [32mINFO[0m - main.py:55 - 缓存预热完成
+2025-07-24 15:08:31,486 - src.main - [32mINFO[0m - main.py:60 - NLU引擎初始化完成
+2025-07-24 15:08:31,487 - src.main - [32mINFO[0m - main.py:62 - 🚀 系统启动完成！监听端口: http://localhost:8000
+2025-07-24 15:08:31,488 - src.main - [32mINFO[0m - main.py:63 - 📚 API文档: http://localhost:8000/docs
+2025-07-24 15:08:33,506 - src.main - [32mINFO[0m - main.py:72 - 正在关闭系统...
+2025-07-24 15:08:33,510 - src.services.cache_service - [32mINFO[0m - cache_service.py:87 - Redis连接已关闭
+2025-07-24 15:08:33,511 - src.main - [32mINFO[0m - main.py:88 - 系统关闭完成
+2025-07-24 15:08:40,118 - src.main - [32mINFO[0m - main.py:33 - 正在启动智能意图识别系统...
+2025-07-24 15:08:40,124 - src.main - [32mINFO[0m - main.py:38 - 数据库连接初始化完成
+2025-07-24 15:08:40,206 - src.main - [32mINFO[0m - main.py:42 - 数据表检查完成
+2025-07-24 15:08:44,008 - src.services.cache_service - [32mINFO[0m - cache_service.py:73 - Redis缓存服务初始化成功
+2025-07-24 15:08:44,009 - src.main - [32mINFO[0m - main.py:47 - Redis缓存初始化完成
+2025-07-24 15:08:44,010 - src.services.startup_service - [32mINFO[0m - startup_service.py:26 - 开始初始化系统服务...
+2025-07-24 15:08:44,011 - src.services.startup_service - [32mINFO[0m - startup_service.py:50 - 缓存服务初始化完成
+2025-07-24 15:08:44,065 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:115 - 加载同义词词典完成: 47个同义词, 12个词组
+2025-07-24 15:08:44,080 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:154 - 加载停用词完成: 52个
+2025-07-24 15:08:44,088 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:192 - 加载实体模式完成: 10个
+2025-07-24 15:08:44,089 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:51 - 同义词数据重新加载完成
+2025-07-24 15:08:44,090 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:35 - 同义词服务初始化完成
+2025-07-24 15:08:44,091 - src.services.startup_service - [32mINFO[0m - startup_service.py:58 - ✅ 同义词服务初始化完成
+2025-07-24 15:08:44,092 - src.services.startup_service - [32mINFO[0m - startup_service.py:68 - 其他服务初始化完成
+2025-07-24 15:08:44,092 - src.services.startup_service - [32mINFO[0m - startup_service.py:38 - ✅ 所有系统服务初始化完成
+2025-07-24 15:08:44,093 - src.main - [32mINFO[0m - main.py:51 - 系统服务初始化完成
+2025-07-24 15:08:44,095 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:102 - LLM初始化完成 - 连接到: http://10.5.180.13:9997/v1/chat/completions
+2025-07-24 15:08:44,412 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:158 - ✅ LLM连接测试成功
+2025-07-24 15:08:44,416 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:142 - 加载了4个意图到缓存
+2025-07-24 15:08:44,416 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:118 - NLU引擎初始化完成
+2025-07-24 15:08:44,423 - src.main - [32mINFO[0m - main.py:207 - 预热了 4 个活跃意图配置
+2025-07-24 15:08:44,433 - src.main - [32mINFO[0m - main.py:214 - 预热了 6 个系统配置
+2025-07-24 15:08:44,434 - src.main - [32mINFO[0m - main.py:55 - 缓存预热完成
+2025-07-24 15:08:44,434 - src.main - [32mINFO[0m - main.py:60 - NLU引擎初始化完成
+2025-07-24 15:08:44,435 - src.main - [32mINFO[0m - main.py:62 - 🚀 系统启动完成！监听端口: http://localhost:8000
+2025-07-24 15:08:44,436 - src.main - [32mINFO[0m - main.py:63 - 📚 API文档: http://localhost:8000/docs
+2025-07-24 15:08:50,768 - src.main - [32mINFO[0m - main.py:33 - 正在启动智能意图识别系统...
+2025-07-24 15:08:50,872 - src.main - [32mINFO[0m - main.py:38 - 数据库连接初始化完成
+2025-07-24 15:08:51,183 - src.main - [32mINFO[0m - main.py:42 - 数据表检查完成
+2025-07-24 15:08:51,211 - src.services.cache_service - [32mINFO[0m - cache_service.py:73 - Redis缓存服务初始化成功
+2025-07-24 15:08:51,212 - src.main - [32mINFO[0m - main.py:47 - Redis缓存初始化完成
+2025-07-24 15:08:51,213 - src.services.startup_service - [32mINFO[0m - startup_service.py:26 - 开始初始化系统服务...
+2025-07-24 15:08:51,213 - src.services.startup_service - [32mINFO[0m - startup_service.py:50 - 缓存服务初始化完成
+2025-07-24 15:08:51,262 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:115 - 加载同义词词典完成: 47个同义词, 12个词组
+2025-07-24 15:08:51,272 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:154 - 加载停用词完成: 52个
+2025-07-24 15:08:51,278 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:192 - 加载实体模式完成: 10个
+2025-07-24 15:08:51,279 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:51 - 同义词数据重新加载完成
+2025-07-24 15:08:51,280 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:35 - 同义词服务初始化完成
+2025-07-24 15:08:51,280 - src.services.startup_service - [32mINFO[0m - startup_service.py:58 - ✅ 同义词服务初始化完成
+2025-07-24 15:08:51,281 - src.services.startup_service - [32mINFO[0m - startup_service.py:68 - 其他服务初始化完成
+2025-07-24 15:08:51,281 - src.services.startup_service - [32mINFO[0m - startup_service.py:38 - ✅ 所有系统服务初始化完成
+2025-07-24 15:08:51,282 - src.main - [32mINFO[0m - main.py:51 - 系统服务初始化完成
+2025-07-24 15:08:51,283 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:102 - LLM初始化完成 - 连接到: http://10.5.180.13:9997/v1/chat/completions
+2025-07-24 15:08:51,566 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:158 - ✅ LLM连接测试成功
+2025-07-24 15:08:51,577 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:142 - 加载了4个意图到缓存
+2025-07-24 15:08:51,579 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:118 - NLU引擎初始化完成
+2025-07-24 15:08:51,612 - src.main - [32mINFO[0m - main.py:207 - 预热了 4 个活跃意图配置
+2025-07-24 15:08:51,622 - src.main - [32mINFO[0m - main.py:214 - 预热了 6 个系统配置
+2025-07-24 15:08:51,622 - src.main - [32mINFO[0m - main.py:55 - 缓存预热完成
+2025-07-24 15:08:51,623 - src.main - [32mINFO[0m - main.py:60 - NLU引擎初始化完成
+2025-07-24 15:08:51,624 - src.main - [32mINFO[0m - main.py:62 - 🚀 系统启动完成！监听端口: http://localhost:8000
+2025-07-24 15:08:51,625 - src.main - [32mINFO[0m - main.py:63 - 📚 API文档: http://localhost:8000/docs
+2025-07-24 15:11:09,754 - src.main - [32mINFO[0m - main.py:72 - 正在关闭系统...
+2025-07-24 15:11:09,783 - src.services.cache_service - [32mINFO[0m - cache_service.py:87 - Redis连接已关闭
+2025-07-24 15:11:09,784 - src.main - [32mINFO[0m - main.py:88 - 系统关闭完成
+2025-07-24 15:11:17,026 - src.main - [32mINFO[0m - main.py:33 - 正在启动智能意图识别系统...
+2025-07-24 15:11:17,035 - src.main - [32mINFO[0m - main.py:38 - 数据库连接初始化完成
+2025-07-24 15:11:17,109 - src.main - [32mINFO[0m - main.py:42 - 数据表检查完成
+2025-07-24 15:11:17,130 - src.services.cache_service - [32mINFO[0m - cache_service.py:73 - Redis缓存服务初始化成功
+2025-07-24 15:11:17,131 - src.main - [32mINFO[0m - main.py:47 - Redis缓存初始化完成
+2025-07-24 15:11:17,132 - src.services.startup_service - [32mINFO[0m - startup_service.py:26 - 开始初始化系统服务...
+2025-07-24 15:11:17,132 - src.services.startup_service - [32mINFO[0m - startup_service.py:50 - 缓存服务初始化完成
+2025-07-24 15:11:17,178 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:115 - 加载同义词词典完成: 47个同义词, 12个词组
+2025-07-24 15:11:17,187 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:154 - 加载停用词完成: 52个
+2025-07-24 15:11:17,192 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:192 - 加载实体模式完成: 10个
+2025-07-24 15:11:17,192 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:51 - 同义词数据重新加载完成
+2025-07-24 15:11:17,193 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:35 - 同义词服务初始化完成
+2025-07-24 15:11:17,193 - src.services.startup_service - [32mINFO[0m - startup_service.py:58 - ✅ 同义词服务初始化完成
+2025-07-24 15:11:17,194 - src.services.startup_service - [32mINFO[0m - startup_service.py:68 - 其他服务初始化完成
+2025-07-24 15:11:17,194 - src.services.startup_service - [32mINFO[0m - startup_service.py:38 - ✅ 所有系统服务初始化完成
+2025-07-24 15:11:17,195 - src.main - [32mINFO[0m - main.py:51 - 系统服务初始化完成
+2025-07-24 15:11:17,196 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:102 - LLM初始化完成 - 连接到: http://10.5.180.13:9997/v1/chat/completions
+2025-07-24 15:11:17,501 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:158 - ✅ LLM连接测试成功
+2025-07-24 15:11:17,507 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:142 - 加载了4个意图到缓存
+2025-07-24 15:11:17,508 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:118 - NLU引擎初始化完成
+2025-07-24 15:11:17,515 - src.main - [32mINFO[0m - main.py:207 - 预热了 4 个活跃意图配置
+2025-07-24 15:11:17,525 - src.main - [32mINFO[0m - main.py:214 - 预热了 6 个系统配置
+2025-07-24 15:11:17,526 - src.main - [32mINFO[0m - main.py:55 - 缓存预热完成
+2025-07-24 15:11:17,527 - src.main - [32mINFO[0m - main.py:60 - NLU引擎初始化完成
+2025-07-24 15:11:17,527 - src.main - [32mINFO[0m - main.py:62 - 🚀 系统启动完成！监听端口: http://localhost:8000
+2025-07-24 15:11:17,528 - src.main - [32mINFO[0m - main.py:63 - 📚 API文档: http://localhost:8000/docs
+2025-07-24 15:11:32,873 - src.main - [32mINFO[0m - main.py:72 - 正在关闭系统...
+2025-07-24 15:11:32,888 - src.services.cache_service - [32mINFO[0m - cache_service.py:87 - Redis连接已关闭
+2025-07-24 15:11:32,890 - src.main - [32mINFO[0m - main.py:88 - 系统关闭完成
+2025-07-24 15:11:39,623 - src.main - [32mINFO[0m - main.py:33 - 正在启动智能意图识别系统...
+2025-07-24 15:11:39,631 - src.main - [32mINFO[0m - main.py:38 - 数据库连接初始化完成
+2025-07-24 15:11:39,707 - src.main - [32mINFO[0m - main.py:42 - 数据表检查完成
+2025-07-24 15:11:41,125 - src.services.cache_service - [32mINFO[0m - cache_service.py:73 - Redis缓存服务初始化成功
+2025-07-24 15:11:41,126 - src.main - [32mINFO[0m - main.py:47 - Redis缓存初始化完成
+2025-07-24 15:11:41,126 - src.services.startup_service - [32mINFO[0m - startup_service.py:26 - 开始初始化系统服务...
+2025-07-24 15:11:41,127 - src.services.startup_service - [32mINFO[0m - startup_service.py:50 - 缓存服务初始化完成
+2025-07-24 15:11:41,177 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:115 - 加载同义词词典完成: 47个同义词, 12个词组
+2025-07-24 15:11:41,187 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:154 - 加载停用词完成: 52个
+2025-07-24 15:11:41,192 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:192 - 加载实体模式完成: 10个
+2025-07-24 15:11:41,193 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:51 - 同义词数据重新加载完成
+2025-07-24 15:11:41,194 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:35 - 同义词服务初始化完成
+2025-07-24 15:11:41,194 - src.services.startup_service - [32mINFO[0m - startup_service.py:58 - ✅ 同义词服务初始化完成
+2025-07-24 15:11:41,195 - src.services.startup_service - [32mINFO[0m - startup_service.py:68 - 其他服务初始化完成
+2025-07-24 15:11:41,195 - src.services.startup_service - [32mINFO[0m - startup_service.py:38 - ✅ 所有系统服务初始化完成
+2025-07-24 15:11:41,196 - src.main - [32mINFO[0m - main.py:51 - 系统服务初始化完成
+2025-07-24 15:11:41,197 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:102 - LLM初始化完成 - 连接到: http://10.5.180.13:9997/v1/chat/completions
+2025-07-24 15:11:41,494 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:158 - ✅ LLM连接测试成功
+2025-07-24 15:11:41,501 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:142 - 加载了4个意图到缓存
+2025-07-24 15:11:41,502 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:118 - NLU引擎初始化完成
+2025-07-24 15:11:42,146 - src.main - [32mINFO[0m - main.py:207 - 预热了 4 个活跃意图配置
+2025-07-24 15:11:42,154 - src.main - [32mINFO[0m - main.py:214 - 预热了 6 个系统配置
+2025-07-24 15:11:42,155 - src.main - [32mINFO[0m - main.py:55 - 缓存预热完成
+2025-07-24 15:11:42,155 - src.main - [32mINFO[0m - main.py:60 - NLU引擎初始化完成
+2025-07-24 15:11:42,156 - src.main - [32mINFO[0m - main.py:62 - 🚀 系统启动完成！监听端口: http://localhost:8000
+2025-07-24 15:11:42,157 - src.main - [32mINFO[0m - main.py:63 - 📚 API文档: http://localhost:8000/docs
+2025-07-24 15:12:09,635 - src.main - [32mINFO[0m - main.py:72 - 正在关闭系统...
+2025-07-24 15:12:09,645 - src.services.cache_service - [32mINFO[0m - cache_service.py:87 - Redis连接已关闭
+2025-07-24 15:12:09,646 - src.main - [32mINFO[0m - main.py:88 - 系统关闭完成
+2025-07-24 15:12:16,889 - src.main - [32mINFO[0m - main.py:33 - 正在启动智能意图识别系统...
+2025-07-24 15:12:16,900 - src.main - [32mINFO[0m - main.py:38 - 数据库连接初始化完成
+2025-07-24 15:12:17,034 - src.main - [32mINFO[0m - main.py:42 - 数据表检查完成
+2025-07-24 15:12:19,355 - src.services.cache_service - [32mINFO[0m - cache_service.py:73 - Redis缓存服务初始化成功
+2025-07-24 15:12:19,356 - src.main - [32mINFO[0m - main.py:47 - Redis缓存初始化完成
+2025-07-24 15:12:19,357 - src.services.startup_service - [32mINFO[0m - startup_service.py:26 - 开始初始化系统服务...
+2025-07-24 15:12:19,358 - src.services.startup_service - [32mINFO[0m - startup_service.py:50 - 缓存服务初始化完成
+2025-07-24 15:12:19,424 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:115 - 加载同义词词典完成: 47个同义词, 12个词组
+2025-07-24 15:12:19,435 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:154 - 加载停用词完成: 52个
+2025-07-24 15:12:19,440 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:192 - 加载实体模式完成: 10个
+2025-07-24 15:12:19,441 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:51 - 同义词数据重新加载完成
+2025-07-24 15:12:19,442 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:35 - 同义词服务初始化完成
+2025-07-24 15:12:19,442 - src.services.startup_service - [32mINFO[0m - startup_service.py:58 - ✅ 同义词服务初始化完成
+2025-07-24 15:12:19,443 - src.services.startup_service - [32mINFO[0m - startup_service.py:68 - 其他服务初始化完成
+2025-07-24 15:12:19,443 - src.services.startup_service - [32mINFO[0m - startup_service.py:38 - ✅ 所有系统服务初始化完成
+2025-07-24 15:12:19,444 - src.main - [32mINFO[0m - main.py:51 - 系统服务初始化完成
+2025-07-24 15:12:19,445 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:102 - LLM初始化完成 - 连接到: http://10.5.180.13:9997/v1/chat/completions
+2025-07-24 15:12:19,748 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:158 - ✅ LLM连接测试成功
+2025-07-24 15:12:19,753 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:142 - 加载了4个意图到缓存
+2025-07-24 15:12:19,754 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:118 - NLU引擎初始化完成
+2025-07-24 15:12:21,055 - src.main - [32mINFO[0m - main.py:207 - 预热了 4 个活跃意图配置
+2025-07-24 15:12:21,062 - src.main - [32mINFO[0m - main.py:214 - 预热了 6 个系统配置
+2025-07-24 15:12:21,063 - src.main - [32mINFO[0m - main.py:55 - 缓存预热完成
+2025-07-24 15:12:21,063 - src.main - [32mINFO[0m - main.py:60 - NLU引擎初始化完成
+2025-07-24 15:12:21,063 - src.main - [32mINFO[0m - main.py:62 - 🚀 系统启动完成！监听端口: http://localhost:8000
+2025-07-24 15:12:21,064 - src.main - [32mINFO[0m - main.py:63 - 📚 API文档: http://localhost:8000/docs
+2025-07-24 15:12:21,569 - src.main - [32mINFO[0m - main.py:72 - 正在关闭系统...
+2025-07-24 15:12:21,574 - src.services.cache_service - [32mINFO[0m - cache_service.py:87 - Redis连接已关闭
+2025-07-24 15:12:21,575 - src.main - [32mINFO[0m - main.py:88 - 系统关闭完成
+2025-07-24 15:12:27,724 - src.main - [32mINFO[0m - main.py:33 - 正在启动智能意图识别系统...
+2025-07-24 15:12:27,730 - src.main - [32mINFO[0m - main.py:38 - 数据库连接初始化完成
+2025-07-24 15:12:27,845 - src.main - [32mINFO[0m - main.py:42 - 数据表检查完成
+2025-07-24 15:12:27,874 - src.services.cache_service - [32mINFO[0m - cache_service.py:73 - Redis缓存服务初始化成功
+2025-07-24 15:12:27,875 - src.main - [32mINFO[0m - main.py:47 - Redis缓存初始化完成
+2025-07-24 15:12:27,875 - src.services.startup_service - [32mINFO[0m - startup_service.py:26 - 开始初始化系统服务...
+2025-07-24 15:12:27,876 - src.services.startup_service - [32mINFO[0m - startup_service.py:50 - 缓存服务初始化完成
+2025-07-24 15:12:27,920 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:115 - 加载同义词词典完成: 47个同义词, 12个词组
+2025-07-24 15:12:27,930 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:154 - 加载停用词完成: 52个
+2025-07-24 15:12:27,936 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:192 - 加载实体模式完成: 10个
+2025-07-24 15:12:27,937 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:51 - 同义词数据重新加载完成
+2025-07-24 15:12:27,937 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:35 - 同义词服务初始化完成
+2025-07-24 15:12:27,938 - src.services.startup_service - [32mINFO[0m - startup_service.py:58 - ✅ 同义词服务初始化完成
+2025-07-24 15:12:27,939 - src.services.startup_service - [32mINFO[0m - startup_service.py:68 - 其他服务初始化完成
+2025-07-24 15:12:27,939 - src.services.startup_service - [32mINFO[0m - startup_service.py:38 - ✅ 所有系统服务初始化完成
+2025-07-24 15:12:27,940 - src.main - [32mINFO[0m - main.py:51 - 系统服务初始化完成
+2025-07-24 15:12:27,942 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:102 - LLM初始化完成 - 连接到: http://10.5.180.13:9997/v1/chat/completions
+2025-07-24 15:12:28,215 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:158 - ✅ LLM连接测试成功
+2025-07-24 15:12:28,221 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:142 - 加载了4个意图到缓存
+2025-07-24 15:12:28,222 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:118 - NLU引擎初始化完成
+2025-07-24 15:12:28,271 - src.main - [32mINFO[0m - main.py:207 - 预热了 4 个活跃意图配置
+2025-07-24 15:12:28,282 - src.main - [32mINFO[0m - main.py:214 - 预热了 6 个系统配置
+2025-07-24 15:12:28,283 - src.main - [32mINFO[0m - main.py:55 - 缓存预热完成
+2025-07-24 15:12:28,284 - src.main - [32mINFO[0m - main.py:60 - NLU引擎初始化完成
+2025-07-24 15:12:28,285 - src.main - [32mINFO[0m - main.py:62 - 🚀 系统启动完成！监听端口: http://localhost:8000
+2025-07-24 15:12:28,286 - src.main - [32mINFO[0m - main.py:63 - 📚 API文档: http://localhost:8000/docs
+2025-07-24 15:19:08,457 - src.main - [32mINFO[0m - main.py:33 - 正在启动智能意图识别系统...
+2025-07-24 15:19:08,465 - src.main - [32mINFO[0m - main.py:38 - 数据库连接初始化完成
+2025-07-24 15:19:08,658 - src.main - [32mINFO[0m - main.py:42 - 数据表检查完成
+2025-07-24 15:19:08,711 - src.services.cache_service - [32mINFO[0m - cache_service.py:73 - Redis缓存服务初始化成功
+2025-07-24 15:19:08,752 - src.main - [32mINFO[0m - main.py:47 - Redis缓存初始化完成
+2025-07-24 15:19:08,753 - src.services.startup_service - [32mINFO[0m - startup_service.py:26 - 开始初始化系统服务...
+2025-07-24 15:19:08,755 - src.services.startup_service - [32mINFO[0m - startup_service.py:50 - 缓存服务初始化完成
+2025-07-24 15:19:08,853 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:115 - 加载同义词词典完成: 47个同义词, 12个词组
+2025-07-24 15:19:08,867 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:154 - 加载停用词完成: 52个
+2025-07-24 15:19:08,878 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:192 - 加载实体模式完成: 10个
+2025-07-24 15:19:08,879 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:51 - 同义词数据重新加载完成
+2025-07-24 15:19:08,880 - src.services.synonym_service - [32mINFO[0m - synonym_service.py:35 - 同义词服务初始化完成
+2025-07-24 15:19:08,882 - src.services.startup_service - [32mINFO[0m - startup_service.py:58 - ✅ 同义词服务初始化完成
+2025-07-24 15:19:08,883 - src.services.startup_service - [32mINFO[0m - startup_service.py:68 - 其他服务初始化完成
+2025-07-24 15:19:08,885 - src.services.startup_service - [32mINFO[0m - startup_service.py:38 - ✅ 所有系统服务初始化完成
+2025-07-24 15:19:08,886 - src.main - [32mINFO[0m - main.py:51 - 系统服务初始化完成
+2025-07-24 15:19:08,887 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:102 - LLM初始化完成 - 连接到: http://10.5.180.13:9997/v1/chat/completions
+2025-07-24 15:19:09,663 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:158 - ✅ LLM连接测试成功
+2025-07-24 15:19:09,671 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:142 - 加载了4个意图到缓存
+2025-07-24 15:19:09,672 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:118 - NLU引擎初始化完成
+2025-07-24 15:19:09,697 - src.main - [32mINFO[0m - main.py:207 - 预热了 4 个活跃意图配置
+2025-07-24 15:19:09,708 - src.main - [32mINFO[0m - main.py:214 - 预热了 6 个系统配置
+2025-07-24 15:19:09,710 - src.main - [32mINFO[0m - main.py:55 - 缓存预热完成
+2025-07-24 15:19:09,711 - src.main - [32mINFO[0m - main.py:60 - NLU引擎初始化完成
+2025-07-24 15:19:09,712 - src.main - [32mINFO[0m - main.py:62 - 🚀 系统启动完成！监听端口: http://localhost:8000
+2025-07-24 15:19:09,713 - src.main - [32mINFO[0m - main.py:63 - 📚 API文档: http://localhost:8000/docs
+2025-07-24 15:19:33,209 - request - [32mINFO[0m - logger.py:131 - REQUEST POST http://localhost:8000/api/v1/chat/interact [req_id=req_1753341573209]
+2025-07-24 15:19:35,272 - src.services.cache_service - [32mINFO[0m - cache_service.py:73 - Redis缓存服务初始化成功
+2025-07-24 15:19:35,277 - src.api.v1.chat - [32mINFO[0m - chat.py:55 - 收到对话请求: req_1753341575_2e24762f, 用户: enterprise_user_001
+2025-07-24 15:19:45,262 - src.services.conversation_service - [32mINFO[0m - conversation_service.py:140 - 找到用户最近活跃会话: sess_e72bb96eb266
+2025-07-24 15:19:51,325 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:250 - 意图识别完成: 我想订一张明天去上海的机票 -> Intent(book_flight: 订机票) (0.852)
+2025-07-24 15:19:51,333 - src.services.intent_service - [32mINFO[0m - intent_service.py:372 - 阈值决策: 置信度 0.852 通过 intent-specific (book_flight)阈值 0.700 (等级: high)
+2025-07-24 15:19:51,616 - src.services.intent_service - [32mINFO[0m - intent_service.py:106 - 意图识别完成: 我想订一张明天去上海的机票 -> book_flight
+2025-07-24 15:19:51,923 - src.services.intent_service - [32mINFO[0m - intent_service.py:193 - 历史增强意图识别完成: 我想订一张明天去上海的机票 -> book_flight (置信度: 0.852)
+2025-07-24 15:19:51,951 - src.core.dependency_graph - [32mINFO[0m - dependency_graph.py:463 - 构建依赖图完成: intent_id=1, 节点数=4, 边数=0
+2025-07-24 15:19:51,976 - src.core.slot_inheritance - [31mERROR[0m - slot_inheritance.py:538 - 获取对话上下文失败: 'Conversation' object has no attribute 'slots_filled'
+2025-07-24 15:19:51,984 - src.core.slot_inheritance - [32mINFO[0m - slot_inheritance.py:507 - 完成继承处理: 用户=enterprise_user_001, 继承槽位=0, 应用规则=0
+2025-07-24 15:19:55,481 - src.core.nlu_engine - [32mINFO[0m - nlu_engine.py:556 - 实体提取完成: '我想订一张明天去上海的机票...' -> 3 个实体
+2025-07-24 15:20:00,677 - src.services.slot_service - [32mINFO[0m - slot_service.py:145 - 增强槽位提取完成: book_flight, 提取=2个, 继承=0个, 缺失=2个
+2025-07-24 15:20:00,895 - src.core.question_generator - [33mWARNING[0m - question_generator.py:315 - 模板生成失败: AttributeError: DIRECT
+2025-07-24 15:20:00,896 - src.core.question_generator - [33mWARNING[0m - question_generator.py:315 - 模板生成失败: AttributeError: DIRECT
+2025-07-24 15:20:00,896 - src.core.question_generator - [33mWARNING[0m - question_generator.py:315 - 模板生成失败: AttributeError: DIRECT
+2025-07-24 15:20:00,897 - src.core.question_generator - [33mWARNING[0m - question_generator.py:315 - 模板生成失败: AttributeError: DIRECT
+2025-07-24 15:20:00,898 - src.core.question_generator - [33mWARNING[0m - question_generator.py:315 - 模板生成失败: AttributeError: DIRECT
+2025-07-24 15:20:00,899 - src.core.question_generator - [33mWARNING[0m - question_generator.py:315 - 模板生成失败: AttributeError: DIRECT
+2025-07-24 15:20:00,906 - request - [32mINFO[0m - logger.py:137 - RESPONSE 200 27696ms [req_id=req_1753341573209]
+2025-07-24 15:20:00,906 - performance - [32mINFO[0m - logger.py:167 - API_CALL POST /api/v1/chat/interact SUCCESS 27696ms
+2025-07-24 15:20:00,925 - src.api.v1.chat - [32mINFO[0m - chat.py:562 - 对话记录保存成功: 3

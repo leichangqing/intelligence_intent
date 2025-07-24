@@ -38,7 +38,7 @@ DROP TABLE IF EXISTS slot_extraction_rules;
 DROP TABLE IF EXISTS slot_dependencies;
 DROP TABLE IF EXISTS slots;
 DROP TABLE IF EXISTS response_types;
-DROP TABLE IF EXISTS conversation_statuses;
+DROP TABLE IF EXISTS conversation_status;
 DROP TABLE IF EXISTS intents;
 DROP TABLE IF EXISTS entity_dictionary;
 DROP TABLE IF EXISTS entity_types;
@@ -112,6 +112,7 @@ CREATE TABLE IF NOT EXISTS slots (
     prompt_template TEXT COMMENT '询问模板',
     error_message TEXT COMMENT '错误提示',
     extraction_priority INT DEFAULT 1 COMMENT '提取优先级',
+    sort_order INT DEFAULT 1 COMMENT '排序顺序',
     is_active BOOLEAN DEFAULT TRUE COMMENT '是否激活',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
@@ -159,7 +160,7 @@ CREATE TABLE IF NOT EXISTS response_types (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='响应类型配置表';
 
 -- 5. 会话状态表
-CREATE TABLE IF NOT EXISTS conversation_statuses (
+CREATE TABLE IF NOT EXISTS conversation_status (
     id INT PRIMARY KEY AUTO_INCREMENT,
     status_name VARCHAR(50) UNIQUE NOT NULL COMMENT '状态名称',
     display_name VARCHAR(100) NOT NULL COMMENT '显示名称',
@@ -205,6 +206,7 @@ CREATE TABLE IF NOT EXISTS conversations (
     error_message TEXT COMMENT '错误信息',
     metadata JSON COMMENT '元数据',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     INDEX idx_session_id (session_id),
     INDEX idx_user_id (user_id),
     INDEX idx_intent (intent_recognized),
@@ -215,6 +217,27 @@ CREATE TABLE IF NOT EXISTS conversations (
 -- ================================
 -- 功能扩展表
 -- ================================
+
+-- 7.5. 函数定义表
+CREATE TABLE IF NOT EXISTS functions (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    function_name VARCHAR(100) NOT NULL COMMENT '函数名称',
+    intent_name VARCHAR(100) NOT NULL COMMENT '关联意图名称',
+    description TEXT COMMENT '函数描述',
+    function_type VARCHAR(50) DEFAULT 'api_call' COMMENT '函数类型',
+    endpoint_url VARCHAR(500) COMMENT 'API端点',
+    http_method VARCHAR(10) DEFAULT 'POST' COMMENT 'HTTP方法',
+    headers JSON COMMENT '请求头',
+    parameters JSON COMMENT '参数定义',
+    timeout_seconds INT DEFAULT 30 COMMENT '超时时间',
+    retry_count INT DEFAULT 3 COMMENT '重试次数',
+    is_active BOOLEAN DEFAULT TRUE COMMENT '是否激活',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    INDEX idx_function_name (function_name),
+    INDEX idx_intent_name (intent_name),
+    INDEX idx_active (is_active)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='函数定义表';
 
 -- 8. 函数调用配置表
 CREATE TABLE IF NOT EXISTS function_calls (
@@ -260,9 +283,22 @@ CREATE TABLE IF NOT EXISTS system_configs (
     INDEX systemconfig_is_public (is_public)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='系统配置表';
 
--- ================================
--- 同义词管理表 (v2.3新增)
--- ================================
+-- 7. 配置审计日志表
+CREATE TABLE IF NOT EXISTS config_audit_logs (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    table_name VARCHAR(50) NOT NULL COMMENT '表名',
+    -- v2.2 改进: 将record_id类型改为BIGINT以匹配大多数主键类型，增强数据一致性。
+    record_id BIGINT NOT NULL COMMENT '记录ID',
+    action ENUM('INSERT', 'UPDATE', 'DELETE') NOT NULL COMMENT '操作类型',
+    old_values JSON COMMENT '修改前的值',
+    new_values JSON COMMENT '修改后的值',
+    operator_id VARCHAR(100) NOT NULL COMMENT '操作者ID',
+    operator_name VARCHAR(100) COMMENT '操作者姓名',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_table_record (table_name, record_id),
+    INDEX idx_operator (operator_id),
+    INDEX idx_created_at (created_at)
+) COMMENT='配置审计日志表';
 
 -- 10. 同义词组表
 CREATE TABLE IF NOT EXISTS synonym_groups (
@@ -338,6 +374,31 @@ CREATE TABLE IF NOT EXISTS entity_patterns (
     INDEX idx_priority (priority)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='实体识别模式表';
 
+-- 13.5. Prompt模板配置表
+CREATE TABLE IF NOT EXISTS prompt_templates (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    template_name VARCHAR(100) UNIQUE NOT NULL COMMENT '模板名称',
+    template_type ENUM('intent_recognition', 'slot_filling', 'response_generation', 'disambiguation', 'fallback') NOT NULL COMMENT '模板类型',
+    intent_id INT COMMENT '关联意图ID(可选)',
+    template_content TEXT NOT NULL COMMENT '模板内容',
+    variables JSON COMMENT '模板变量定义',
+    language VARCHAR(10) DEFAULT 'zh' COMMENT '语言',
+    version VARCHAR(20) DEFAULT '1.0' COMMENT '版本号',
+    priority INT DEFAULT 1 COMMENT '优先级',
+    usage_count INT DEFAULT 0 COMMENT '使用次数',
+    success_rate DECIMAL(5,4) DEFAULT 0.0000 COMMENT '成功率',
+    is_active BOOLEAN DEFAULT TRUE COMMENT '是否激活',
+    created_by VARCHAR(100) COMMENT '创建人',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    FOREIGN KEY (intent_id) REFERENCES intents(id) ON DELETE SET NULL,
+    INDEX idx_template_type (template_type),
+    INDEX idx_intent_id (intent_id),
+    INDEX idx_language (language),
+    INDEX idx_priority (priority),
+    INDEX idx_active (is_active)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Prompt模板配置表';
+
 -- ================================
 -- 扩展表和日志表
 -- ================================
@@ -362,7 +423,8 @@ CREATE TABLE IF NOT EXISTS slot_dependencies (
     child_slot_id INT NOT NULL,
     dependency_type VARCHAR(50) DEFAULT 'required_if',
     conditions JSON,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='槽位依赖表';
 
 CREATE TABLE IF NOT EXISTS intent_ambiguities (
@@ -381,15 +443,15 @@ CREATE TABLE IF NOT EXISTS intent_ambiguities (
 
 -- 插入响应类型
 INSERT INTO response_types (type_name, display_name, description, template, is_active) VALUES
-('success', '成功响应', '操作成功时的响应', '✅ {message}', TRUE),
-('error', '错误响应', '操作失败时的响应', '❌ {message}', TRUE),
-('clarification', '澄清响应', '需要用户澄清时的响应', '🤔 {message}', TRUE),
-('slot_collection', '槽位收集', '收集槽位信息时的响应', '📝 {message}', TRUE),
-('confirmation', '确认响应', '需要用户确认时的响应', '✋ {message}', TRUE),
-('fallback', '兜底响应', '无法处理时的兜底响应', '🤖 {message}', TRUE);
+('success', '成功响应', '操作成功时的响应', '[成功] {message}', TRUE),
+('error', '错误响应', '操作失败时的响应', '[错误] {message}', TRUE),
+('clarification', '澄清响应', '需要用户澄清时的响应', '[疑问] {message}', TRUE),
+('slot_collection', '槽位收集', '收集槽位信息时的响应', '[询问] {message}', TRUE),
+('confirmation', '确认响应', '需要用户确认时的响应', '[确认] {message}', TRUE),
+('fallback', '兜底响应', '无法处理时的兜底响应', '[系统] {message}', TRUE);
 
 -- 插入会话状态
-INSERT INTO conversation_statuses (status_name, display_name, description, is_final) VALUES
+INSERT INTO conversation_status (status_name, display_name, description, is_final) VALUES
 ('active', '进行中', '对话正在进行', FALSE),
 ('completed', '已完成', '对话已成功完成', TRUE),
 ('failed', '失败', '对话处理失败', TRUE),
@@ -450,6 +512,86 @@ INSERT INTO system_configs (config_category, config_key, config_value, value_typ
 ('api', 'max_retry_attempts', '3', 'number', '最大重试次数', FALSE, TRUE, '{"min": 0, "max": 10}', '3', TRUE, 'system', NOW(), NOW()),
 ('business', 'enable_intent_confirmation', 'true', 'boolean', '是否启用意图确认', FALSE, TRUE, NULL, 'true', TRUE, 'system', NOW(), NOW()),
 ('system', 'system_version', '2.3.0', 'string', '系统版本号', FALSE, TRUE, NULL, '2.3.0', TRUE, 'system', NOW(), NOW());
+
+-- 插入Prompt模板
+INSERT INTO prompt_templates (template_name, template_type, intent_id, template_content, variables, language, version, priority, usage_count, success_rate, is_active, created_by, created_at, updated_at) VALUES
+-- 订机票相关模板
+('book_flight_recognition', 'intent_recognition', 1, 
+ '根据用户输入判断是否为订机票意图：\n\n用户输入：{user_input}\n\n判断规则：\n1. 包含\"订\"、\"买\"、\"预订\"、\"购买\"等动作词\n2. 包含\"机票\"、\"航班\"、\"飞机票\"等关键词\n3. 可能包含出发地、目的地、时间等信息\n\n请分析并返回：\n- 意图识别结果：{intent_name}\n- 置信度：{confidence}\n- 匹配关键词：{matched_keywords}',
+ '{"user_input": "用户原始输入", "intent_name": "意图名称", "confidence": "置信度分数", "matched_keywords": "匹配的关键词列表"}',
+ 'zh', '1.0', 1, 0, 0.0000, TRUE, 'system', NOW(), NOW()),
+
+('book_flight_slot_filling', 'slot_filling', 1,
+ '请从用户输入中提取订机票相关信息：\n\n用户输入：{user_input}\n当前已知信息：{current_slots}\n\n需要提取的槽位：\n- departure_city（出发城市）\n- arrival_city（到达城市）\n- departure_date（出发日期）\n- passenger_count（乘客数量，默认为1）\n\n提取规则：\n1. 城市名称：识别中国主要城市名\n2. 日期：支持\"明天\"、\"后天\"、\"下周一\"等相对时间\n3. 数量：识别\"一个人\"、\"两位\"、\"3人\"等表达\n\n请返回JSON格式的提取结果。',
+ '{"user_input": "用户输入", "current_slots": "当前槽位状态"}',
+ 'zh', '1.0', 1, 0, 0.0000, TRUE, 'system', NOW(), NOW()),
+
+('book_flight_response', 'response_generation', 1,
+ '根据槽位填充情况生成订机票响应：\n\n已填充槽位：{filled_slots}\n缺失槽位：{missing_slots}\n意图：{intent}\n\n响应规则：\n1. 如果槽位完整：确认订票信息并询问是否继续\n2. 如果缺失必填槽位：友好询问缺失信息\n3. 如果信息有误：提示用户纠正\n\n生成自然、友好的中文响应。',
+ '{"filled_slots": "已填充的槽位", "missing_slots": "缺失的槽位", "intent": "当前意图"}',
+ 'zh', '1.0', 1, 0, 0.0000, TRUE, 'system', NOW(), NOW()),
+
+('book_flight_disambiguation', 'disambiguation', 1,
+ '订机票意图存在歧义，需要用户澄清：\n\n候选选项：{candidates}\n用户输入：{user_input}\n\n请生成友好的澄清问题，帮助用户选择正确的选项。格式：\n\"我理解您想要订机票，请问您是想要：\n1. [选项1描述]\n2. [选项2描述]\n请选择对应的数字。\"',
+ '{"candidates": "候选意图列表", "user_input": "用户原始输入"}',
+ 'zh', '1.0', 2, 0, 0.0000, TRUE, 'system', NOW(), NOW()),
+
+-- 查账户余额相关模板
+('check_balance_recognition', 'intent_recognition', 2,
+ '根据用户输入判断是否为查询账户余额意图：\n\n用户输入：{user_input}\n\n判断规则：\n1. 包含\"查询\"、\"查看\"、\"查\"、\"看\"等动作词\n2. 包含\"余额\"、\"结余\"、\"剩余\"、\"账户\"、\"钱\"等关键词\n3. 可能包含账户类型（银行卡、信用卡、支付宝等）\n\n请分析并返回：\n- 意图识别结果：{intent_name}\n- 置信度：{confidence}\n- 匹配关键词：{matched_keywords}',
+ '{"user_input": "用户原始输入", "intent_name": "意图名称", "confidence": "置信度分数", "matched_keywords": "匹配的关键词列表"}',
+ 'zh', '1.0', 1, 0, 0.0000, TRUE, 'system', NOW(), NOW()),
+
+('check_balance_slot_filling', 'slot_filling', 2,
+ '请从用户输入中提取查询余额相关信息：\n\n用户输入：{user_input}\n当前已知信息：{current_slots}\n\n需要提取的槽位：\n- account_type（账户类型）：银行卡、储蓄卡、信用卡、支付宝、微信等\n\n提取规则：\n1. 如果未明确指定账户类型，默认为\"银行卡\"\n2. 识别常见的账户类型表达\n3. 支持多种同义词表达\n\n请返回JSON格式的提取结果。',
+ '{"user_input": "用户输入", "current_slots": "当前槽位状态"}',
+ 'zh', '1.0', 1, 0, 0.0000, TRUE, 'system', NOW(), NOW()),
+
+('check_balance_response', 'response_generation', 2,
+ '根据槽位填充情况生成查询余额响应：\n\n已填充槽位：{filled_slots}\n缺失槽位：{missing_slots}\n意图：{intent}\n\n响应规则：\n1. 如果槽位完整：确认查询的账户类型\n2. 如果缺失账户类型：询问具体要查询哪种账户\n3. 提供安全提示：不会显示完整账户信息\n\n生成专业、安全的中文响应。',
+ '{"filled_slots": "已填充的槽位", "missing_slots": "缺失的槽位", "intent": "当前意图"}',
+ 'zh', '1.0', 1, 0, 0.0000, TRUE, 'system', NOW(), NOW()),
+
+('check_balance_disambiguation', 'disambiguation', 2,
+ '查询余额意图存在歧义，需要用户澄清：\n\n候选选项：{candidates}\n用户输入：{user_input}\n\n请生成友好的澄清问题，帮助用户选择正确的账户类型。格式：\n\"我理解您想要查询余额，请问您是想查询：\n1. [账户类型1]\n2. [账户类型2]\n请选择对应的数字。\"',
+ '{"candidates": "候选选项列表", "user_input": "用户原始输入"}',
+ 'zh', '1.0', 2, 0, 0.0000, TRUE, 'system', NOW(), NOW()),
+
+-- 通用模板
+('general_intent_recognition', 'intent_recognition', NULL,
+ '请分析用户输入并识别意图：\n\n用户输入：{user_input}\n可用意图：{available_intents}\n\n分析步骤：\n1. 识别关键动作词和名词\n2. 匹配已知意图模式\n3. 计算相似度得分\n4. 返回最匹配的意图和置信度\n\n输出格式：JSON',
+ '{"user_input": "用户输入", "available_intents": "可用意图列表"}',
+ 'zh', '1.0', 0, 0, 0.0000, TRUE, 'system', NOW(), NOW()),
+
+('general_slot_filling', 'slot_filling', NULL,
+ '从用户输入中提取槽位信息：\n\n用户输入：{user_input}\n意图：{intent}\n槽位定义：{slot_definitions}\n当前槽位：{current_slots}\n\n提取规则：\n1. 根据槽位类型进行相应的实体识别\n2. 验证提取值的有效性\n3. 处理多值槽位\n4. 标注置信度\n\n返回提取结果的JSON格式。',
+ '{"user_input": "用户输入", "intent": "意图名称", "slot_definitions": "槽位定义", "current_slots": "当前槽位状态"}',
+ 'zh', '1.0', 0, 0, 0.0000, TRUE, 'system', NOW(), NOW()),
+
+('general_response_generation', 'response_generation', NULL,
+ '生成自然语言响应：\n\n意图：{intent}\n槽位状态：{slot_status}\n系统状态：{system_status}\n\n生成规则：\n1. 使用友好、专业的语调\n2. 根据槽位完整性决定响应类型\n3. 提供清晰的下一步指引\n4. 避免技术术语\n\n请生成合适的中文响应。',
+ '{"intent": "当前意图", "slot_status": "槽位状态", "system_status": "系统状态"}',
+ 'zh', '1.0', 0, 0, 0.0000, TRUE, 'system', NOW(), NOW()),
+
+('general_disambiguation', 'disambiguation', NULL,
+ '处理多意图歧义情况：\n\n用户输入：{user_input}\n候选意图：{candidate_intents}\n置信度分布：{confidence_scores}\n\n消歧策略：\n1. 分析各候选意图的特征\n2. 生成清晰的选择提示\n3. 提供具体的区分说明\n4. 引导用户明确表达意图\n\n生成友好的澄清问题。',
+ '{"user_input": "用户输入", "candidate_intents": "候选意图", "confidence_scores": "置信度分数"}',
+ 'zh', '1.0', 1, 0, 0.0000, TRUE, 'system', NOW(), NOW()),
+
+('fallback_response', 'fallback', NULL,
+ '生成兜底响应：\n\n场景：{scenario}\n用户输入：{user_input}\n失败原因：{failure_reason}\n\n兜底策略：\n1. 向用户道歉并说明情况\n2. 提供可能的解决方案\n3. 引导用户重新表达需求\n4. 提供人工客服联系方式（如适用）\n\n保持礼貌和专业性。',
+ '{"scenario": "失败场景", "user_input": "用户输入", "failure_reason": "失败原因"}',
+ 'zh', '1.0', 3, 0, 0.0000, TRUE, 'system', NOW(), NOW()),
+
+('greeting_response', 'response_generation', 3,
+ '生成问候响应：\n\n用户输入：{user_input}\n时间：{current_time}\n用户信息：{user_info}\n\n响应要素：\n1. 热情的问候\n2. 自我介绍（智能客服助手）\n3. 说明可提供的服务\n4. 询问如何帮助\n\n生成温暖、专业的问候语。',
+ '{"user_input": "用户输入", "current_time": "当前时间", "user_info": "用户信息"}',
+ 'zh', '1.0', 1, 0, 0.0000, TRUE, 'system', NOW(), NOW()),
+
+('goodbye_response', 'response_generation', 4, 
+ '生成告别响应：\n\n用户输入：{user_input}\n服务总结：{service_summary}\n\n响应要素：\n1. 感谢用户的使用\n2. 简要总结提供的服务\n3. 表达继续服务的意愿\n4. 礼貌的告别\n\n生成温馨的告别语。',
+ '{"user_input": "用户输入", "service_summary": "服务总结"}',
+ 'zh', '1.0', 1, 0, 0.0000, TRUE, 'system', NOW(), NOW());
 
 -- 插入同义词组
 INSERT INTO synonym_groups (group_name, standard_term, category, description, created_by, created_at, updated_at) VALUES
@@ -623,6 +765,155 @@ INSERT INTO entity_types (type_name, display_name, description, validation_patte
 '["13800138000", "18912345678"]', TRUE),
 ('EMAIL', '邮箱地址', '电子邮箱', '^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$',
 '["example@email.com", "user@domain.com"]', TRUE);
+
+-- ================================
+-- B2B系统扩展表
+-- ================================
+
+-- RAGFLOW集成配置表
+CREATE TABLE IF NOT EXISTS ragflow_configs (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    config_name VARCHAR(100) NOT NULL COMMENT '配置名称',
+    api_endpoint VARCHAR(500) NOT NULL COMMENT 'API端点',
+    api_key_encrypted TEXT COMMENT '加密的API密钥',
+    api_version VARCHAR(20) DEFAULT 'v1' COMMENT 'API版本',
+    timeout_seconds INT DEFAULT 30 COMMENT '超时秒数',
+    max_retries INT DEFAULT 3 COMMENT '最大重试次数',
+    rate_limit_per_minute INT DEFAULT 60 COMMENT '每分钟限制',
+    connection_pool_size INT DEFAULT 10 COMMENT '连接池大小',
+    health_check_interval INT DEFAULT 300 COMMENT '健康检查间隔(秒)',
+    config_metadata JSON COMMENT '配置元数据',
+    is_active BOOLEAN DEFAULT TRUE COMMENT '是否激活',
+    created_by VARCHAR(100) COMMENT '创建人',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    UNIQUE KEY uk_ragflow_config_name (config_name),
+    INDEX idx_ragflow_active (is_active),
+    INDEX idx_ragflow_created_by (created_by)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='RAGFLOW集成配置表';
+
+-- 异步任务管理表
+CREATE TABLE IF NOT EXISTS async_tasks (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    task_id VARCHAR(100) NOT NULL COMMENT '任务ID',
+    task_type ENUM('api_call', 'batch_process', 'data_export', 'ragflow_call') NOT NULL COMMENT '任务类型',
+    status ENUM('pending', 'processing', 'completed', 'failed', 'cancelled') DEFAULT 'pending' COMMENT '任务状态',
+    conversation_id BIGINT COMMENT '关联对话ID',
+    user_id VARCHAR(100) NOT NULL COMMENT '用户ID',
+    request_data JSON COMMENT '请求数据',
+    result_data JSON COMMENT '结果数据',
+    error_message TEXT COMMENT '错误信息',
+    progress DECIMAL(5,2) DEFAULT 0.00 COMMENT '进度百分比',
+    started_at TIMESTAMP NULL COMMENT '开始时间',
+    completed_at TIMESTAMP NULL COMMENT '完成时间',
+    retry_count INT DEFAULT 0 COMMENT '重试次数',
+    priority INT DEFAULT 1 COMMENT '优先级',
+    timeout_seconds INT DEFAULT 300 COMMENT '超时时间',
+    metadata JSON COMMENT '任务元数据',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    UNIQUE KEY uk_async_task_id (task_id),
+    INDEX idx_async_status_type (status, task_type),
+    INDEX idx_async_user_created (user_id, created_at),
+    INDEX idx_async_conversation (conversation_id),
+    INDEX idx_async_priority (priority),
+    FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='异步任务管理表';
+
+-- API调用日志表
+CREATE TABLE IF NOT EXISTS api_call_logs (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    request_id VARCHAR(100) NOT NULL COMMENT '请求ID',
+    api_endpoint VARCHAR(500) NOT NULL COMMENT 'API端点',
+    http_method VARCHAR(10) NOT NULL COMMENT 'HTTP方法',
+    user_id VARCHAR(100) COMMENT '用户ID',
+    session_id VARCHAR(100) COMMENT '会话ID',
+    request_headers JSON COMMENT '请求头',
+    request_body TEXT COMMENT '请求体',
+    response_status INT COMMENT '响应状态码',
+    response_headers JSON COMMENT '响应头',
+    response_body TEXT COMMENT '响应体',
+    response_time_ms INT COMMENT '响应时间毫秒',
+    error_message TEXT COMMENT '错误信息',
+    client_ip VARCHAR(45) COMMENT '客户端IP',
+    user_agent TEXT COMMENT '用户代理',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    UNIQUE KEY uk_api_request_id (request_id),
+    INDEX idx_api_endpoint (api_endpoint(100)),
+    INDEX idx_api_user_id (user_id),
+    INDEX idx_api_session_id (session_id),
+    INDEX idx_api_status (response_status),
+    INDEX idx_api_created_at (created_at),
+    INDEX idx_api_response_time (response_time_ms),
+    INDEX idx_api_client_ip (client_ip)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='API调用日志表';
+
+-- 安全审计日志表
+CREATE TABLE IF NOT EXISTS security_audit_logs (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    event_type VARCHAR(50) NOT NULL COMMENT '事件类型',
+    user_id VARCHAR(100) COMMENT '用户ID',
+    session_id VARCHAR(100) COMMENT '会话ID',
+    ip_address VARCHAR(45) COMMENT 'IP地址',
+    user_agent TEXT COMMENT '用户代理',
+    event_description TEXT COMMENT '事件描述',
+    event_data JSON COMMENT '事件数据',
+    risk_level ENUM('low', 'medium', 'high', 'critical') DEFAULT 'low' COMMENT '风险等级',
+    status ENUM('pending', 'reviewed', 'resolved', 'ignored') DEFAULT 'pending' COMMENT '处理状态',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    INDEX idx_security_event_type (event_type),
+    INDEX idx_security_user_id (user_id),
+    INDEX idx_security_session_id (session_id),
+    INDEX idx_security_ip (ip_address),
+    INDEX idx_security_risk_level (risk_level),
+    INDEX idx_security_created_at (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='安全审计日志表';
+
+-- 缓存失效日志表
+CREATE TABLE IF NOT EXISTS cache_invalidation_logs (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    cache_key VARCHAR(500) NOT NULL COMMENT '缓存键',
+    cache_type VARCHAR(50) NOT NULL COMMENT '缓存类型',
+    operation ENUM('invalidate', 'refresh', 'delete') NOT NULL COMMENT '操作类型',
+    reason VARCHAR(200) COMMENT '失效原因',
+    user_id VARCHAR(100) COMMENT '操作用户',
+    affected_count INT DEFAULT 0 COMMENT '影响的记录数',
+    execution_time_ms INT COMMENT '执行时间毫秒',
+    success BOOLEAN DEFAULT TRUE COMMENT '是否成功',
+    error_message TEXT COMMENT '错误信息',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    INDEX idx_cache_key (cache_key(100)),
+    INDEX idx_cache_type (cache_type),
+    INDEX idx_cache_operation (operation),
+    INDEX idx_cache_user_id (user_id),
+    INDEX idx_cache_created_at (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='缓存失效日志表';
+
+-- 异步日志队列表
+CREATE TABLE IF NOT EXISTS async_log_queue (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    log_type VARCHAR(50) NOT NULL COMMENT '日志类型',
+    log_level ENUM('DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL') NOT NULL COMMENT '日志级别',
+    log_data JSON NOT NULL COMMENT '日志数据',
+    processing_status ENUM('pending', 'processing', 'completed', 'failed') DEFAULT 'pending' COMMENT '处理状态',
+    retry_count INT DEFAULT 0 COMMENT '重试次数',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    processed_at TIMESTAMP NULL COMMENT '处理时间',
+    INDEX idx_async_log_type (log_type),
+    INDEX idx_async_log_level (log_level),
+    INDEX idx_async_log_status (processing_status),
+    INDEX idx_async_log_created (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='异步日志队列表';
+
+-- 插入RAGFLOW默认配置
+INSERT INTO ragflow_configs (config_name, api_endpoint, api_key_encrypted, api_version, timeout_seconds, max_retries, rate_limit_per_minute, connection_pool_size, health_check_interval, config_metadata, is_active, created_by) VALUES
+('default_ragflow', 'https://api.ragflow.com/v1/chat', 'encrypted_ragflow_api_key_here', 'v1', 30, 3, 100, 10, 300,
+'{"headers": {"Content-Type": "application/json", "Authorization": "Bearer ${API_KEY}"}, "fallback_config": {"enable_fallback": true, "fallback_response": "抱歉，服务暂时不可用，请稍后重试。"}, "health_check_url": "https://api.ragflow.com/health"}',
+TRUE, 'system'),
+
+('backup_ragflow', 'https://backup.ragflow.com/v1/chat', 'encrypted_backup_ragflow_key', 'v1', 45, 5, 60, 5, 600,
+'{"headers": {"Content-Type": "application/json", "Authorization": "Bearer ${BACKUP_API_KEY}"}, "fallback_config": {"enable_fallback": true, "fallback_response": "备用服务暂时不可用。"}, "health_check_url": "https://backup.ragflow.com/health"}',
+FALSE, 'system');
 
 -- ================================
 -- 显示初始化结果

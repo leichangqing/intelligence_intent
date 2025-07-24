@@ -131,15 +131,15 @@ async def get_system_health(
         }
         
         # 计算整体状态
-        all_statuses = []
+        all_status = []
         for category in [health_status["system_resources"], health_status["services"], health_status["external_services"]]:
             for item in category.values():
                 if isinstance(item, dict) and "status" in item:
-                    all_statuses.append(item["status"])
+                    all_status.append(item["status"])
         
-        if "critical" in all_statuses:
+        if "critical" in all_status:
             health_status["overall_status"] = "critical"
-        elif "warning" in all_statuses:
+        elif "warning" in all_status:
             health_status["overall_status"] = "warning"
         else:
             health_status["overall_status"] = "healthy"

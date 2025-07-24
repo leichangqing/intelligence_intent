@@ -23,6 +23,7 @@ class Slot(CommonModel):
     prompt_template = TextField(null=True, verbose_name="询问模板")
     error_message = TextField(null=True, verbose_name="错误提示")
     extraction_priority = IntegerField(default=1, verbose_name="提取优先级")
+    sort_order = IntegerField(default=1, verbose_name="排序顺序")
     is_active = BooleanField(default=True, verbose_name="是否激活")
     
     class Meta:
@@ -149,7 +150,7 @@ class Slot(CommonModel):
 class SlotValue(CommonModel):
     """槽位值存储表"""
     
-    conversation_id = BigIntegerField(verbose_name="会话ID")
+    conversation_id = BigIntegerField(verbose_name="对话ID")
     slot = ForeignKeyField(Slot, backref='values', on_delete='CASCADE', verbose_name="关联槽位")
     slot_name = CharField(max_length=100, verbose_name="槽位名称")
     original_text = TextField(null=True, verbose_name="原始文本")
@@ -166,9 +167,9 @@ class SlotValue(CommonModel):
         table_name = 'slot_values'
         indexes = (
             (('conversation_id', 'slot'), False),
-            (('conversation_id', 'source_turn'), False),
+            (('slot_name',), False),
             (('extraction_method',), False),
-            (('is_validated',), False),
+            (('validation_status',), False),
         )
     
     def get_normalized_value(self):
@@ -305,31 +306,27 @@ class SlotValue(CommonModel):
 class SlotDependency(CommonModel):
     """槽位依赖关系表"""
     
-    dependent_slot = ForeignKeyField(Slot, backref='dependencies', on_delete='CASCADE', verbose_name="依赖槽位")
-    required_slot = ForeignKeyField(Slot, backref='dependents', on_delete='CASCADE', verbose_name="被依赖槽位")
-    dependency_type = CharField(max_length=50, default='required', verbose_name="依赖类型",
-                               constraints=[Check("dependency_type IN ('required', 'conditional', 'exclusive', 'related')")])
-    dependency_condition = JSONField(null=True, verbose_name="依赖条件")
-    dependency_level = IntegerField(default=1, verbose_name="依赖层级")
-    is_active = BooleanField(default=True, verbose_name="是否激活")
+    parent_slot_id = IntegerField(verbose_name="父槽位ID")
+    child_slot_id = IntegerField(verbose_name="子槽位ID")
+    dependency_type = CharField(max_length=50, default='required_if', verbose_name="依赖类型")
+    conditions = JSONField(null=True, verbose_name="依赖条件")
     
     class Meta:
         table_name = 'slot_dependencies'
         indexes = (
-            (('dependent_slot', 'required_slot'), True),  # 联合唯一索引
+            (('parent_slot_id', 'child_slot_id'), True),  # 联合唯一索引
             (('dependency_type',), False),
-            (('dependency_level',), False),
         )
     
     def get_condition(self) -> dict:
         """获取依赖条件"""
-        if self.dependency_condition:
-            return self.dependency_condition if isinstance(self.dependency_condition, dict) else {}
+        if self.conditions:
+            return self.conditions if isinstance(self.conditions, dict) else {}
         return {}
     
     def set_condition(self, condition: dict):
         """设置依赖条件"""
-        self.dependency_condition = condition
+        self.conditions = condition
     
     def check_dependency(self, slot_values: dict):
         """
@@ -341,26 +338,33 @@ class SlotDependency(CommonModel):
         Returns:
             tuple: (是否满足, 错误信息)
         """
-        required_slot_name = self.required_slot.slot_name
-        dependent_slot_name = self.dependent_slot.slot_name
+        try:
+            # 通过ID获取槽位对象
+            parent_slot = Slot.get_by_id(self.parent_slot_id)
+            child_slot = Slot.get_by_id(self.child_slot_id)
+            
+            parent_slot_name = parent_slot.slot_name
+            child_slot_name = child_slot.slot_name
+        except Slot.DoesNotExist:
+            return False, "依赖关系中的槽位不存在"
         
         # 基本依赖检查：被依赖的槽位必须有值
         if self.dependency_type == 'required':
-            if required_slot_name not in slot_values or slot_values[required_slot_name] is None:
-                return False, f"槽位 {dependent_slot_name} 需要先填写 {required_slot_name}"
+            if parent_slot_name not in slot_values or slot_values[parent_slot_name] is None:
+                return False, f"槽位 {child_slot_name} 需要先填写 {parent_slot_name}"
         
         # 条件依赖检查
         elif self.dependency_type == 'conditional':
             condition = self.get_condition()
             if not self._evaluate_condition(condition, slot_values):
                 condition_desc = condition.get('description', '特定条件')
-                return False, f"槽位 {dependent_slot_name} 在 {condition_desc} 时才需要填写"
+                return False, f"槽位 {child_slot_name} 在 {condition_desc} 时才需要填写"
         
         # 互斥依赖检查
         elif self.dependency_type == 'mutex':
-            if (required_slot_name in slot_values and slot_values[required_slot_name] is not None and
-                dependent_slot_name in slot_values and slot_values[dependent_slot_name] is not None):
-                return False, f"槽位 {dependent_slot_name} 和 {required_slot_name} 不能同时填写"
+            if (parent_slot_name in slot_values and slot_values[parent_slot_name] is not None and
+                child_slot_name in slot_values and slot_values[child_slot_name] is not None):
+                return False, f"槽位 {child_slot_name} 和 {parent_slot_name} 不能同时填写"
         
         return True, ""
     
@@ -369,8 +373,14 @@ class SlotDependency(CommonModel):
         if not condition:
             return True
         
+        try:
+            parent_slot = Slot.get_by_id(self.parent_slot_id)
+            default_target_slot = parent_slot.slot_name
+        except Slot.DoesNotExist:
+            default_target_slot = "unknown_slot"
+        
         condition_type = condition.get('type', 'value_equals')
-        target_slot = condition.get('slot', self.required_slot.slot_name)
+        target_slot = condition.get('slot', default_target_slot)
         expected_value = condition.get('value')
         
         if target_slot not in slot_values:
@@ -392,7 +402,7 @@ class SlotDependency(CommonModel):
     @classmethod
     def get_dependencies_for_slot(cls, slot_id: int):
         """获取指定槽位的所有依赖关系"""
-        return cls.select().where(cls.dependent_slot == slot_id).order_by(cls.dependency_level)
+        return cls.select().where(cls.child_slot_id == slot_id)
     
     @classmethod
     def check_all_dependencies(cls, intent_id: int, slot_values: dict):
@@ -407,9 +417,9 @@ class SlotDependency(CommonModel):
             tuple: (是否全部满足, 错误信息列表)
         """
         # 获取该意图下所有的依赖关系
-        dependencies = cls.select().join(Slot, on=(cls.dependent_slot == Slot.id)).where(
+        dependencies = cls.select().join(Slot, on=(cls.child_slot_id == Slot.id)).where(
             Slot.intent == intent_id
-        ).order_by(cls.dependency_level)
+        )
         
         errors = []
         for dependency in dependencies:
@@ -420,6 +430,11 @@ class SlotDependency(CommonModel):
         return len(errors) == 0, errors
     
     def __str__(self):
-        return f"SlotDependency({self.dependent_slot.slot_name} depends on {self.required_slot.slot_name})"
+        try:
+            parent_slot = Slot.get_by_id(self.parent_slot_id)
+            child_slot = Slot.get_by_id(self.child_slot_id)
+            return f"SlotDependency({child_slot.slot_name} depends on {parent_slot.slot_name})"
+        except Slot.DoesNotExist:
+            return f"SlotDependency(child_id={self.child_slot_id} depends on parent_id={self.parent_slot_id})"
 
 

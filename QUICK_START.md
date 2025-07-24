@@ -380,6 +380,11 @@ src/
 
 ### 常见问题
 
+0. **v2.2已修复的启动问题**
+   - ✅ **Redis缓存服务未初始化警告**: 已优化服务启动顺序
+   - ✅ **CacheService.generate_key方法不存在**: 已统一使用get_cache_key方法
+   - ✅ **FunctionService.execute_function_call方法缺失**: 已实现功能调用执行方法
+
 1. **数据库连接失败**
    - 检查MySQL服务是否启动
    - 验证数据库配置信息
@@ -389,6 +394,7 @@ src/
    - 检查Redis服务是否启动
    - 验证Redis配置信息
    - v2.2：检查Redis是否支持pipeline和事务操作
+   - **已修复**: Redis缓存服务未初始化警告（调整了启动顺序）
 
 3. **LLM调用失败**
    - 检查API密钥是否正确
@@ -429,6 +435,7 @@ tail -f logs/app.log
    - 使用async_log_queue表进行日志队列管理
    - 实现事件驱动的缓存失效机制
    - 后台处理cache_invalidation_logs
+   - **修复**: CacheService方法名统一使用get_cache_key
 
 ## v2.2混合架构亮点
 
@@ -438,6 +445,7 @@ tail -f logs/app.log
 - **API层无状态**: 每次请求独立处理，支持负载均衡和水平扩展
 - **数据层有状态**: 持久化对话历史和会话状态，支持多轮推理
 - **智能上下文**: 基于历史对话的意图识别和槽位继承
+- **v2.2优化**: 修复了Redis缓存服务初始化顺序，消除启动警告
 
 ### 2. 缓存优化改进
 
@@ -472,6 +480,10 @@ filled_slots = await cache_service.get_conversation_filled_slots(conversation_id
 # 缓存实体识别结果
 entity_result = await cache_service.lookup_entity("city", "北京")
 # 返回: {"entity_value": "北京", "canonical_form": "北京市", "aliases": ["北京", "京城"]}
+
+# v2.2修复：正确的缓存键生成方法
+cache_key = cache_service.get_cache_key('session', session_id=session_id)
+# 而不是: cache_service.generate_key()
 ```
 
 ## 生产部署

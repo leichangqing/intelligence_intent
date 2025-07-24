@@ -5,14 +5,14 @@
 **架构优化变化**:
 - **混合架构设计**: 计算层无状态，存储层有状态，支持多轮对话的历史上下文推理
 - **数据结构规范化**: conversations表移除slots_filled/slots_missing字段，槽位信息从slot_values表动态获取
-- **新增模型支持**: 支持entity_types、entity_dictionary、response_types、conversation_statuses等新模型的缓存
+- **新增模型支持**: 支持entity_types、entity_dictionary、response_types、conversation_status等新模型的缓存
 - **应用层缓存管理**: 缓存失效逻辑从数据库触发器迁移到应用层事件驱动机制  
 - **异步日志缓存**: 新增async_log_queue和cache_invalidation_logs的缓存策略
 
 ## 1. 统一缓存键命名规范
 
 ### 1.1 缓存键模板 v2.2 (CacheService优化)
-基于 `src/services/cache_service.py` 的统一模板系统：
+基于 `src/services/cache_service.py` 的统一模板系统（已修复初始化和方法名问题）：
 
 ```python
 CACHE_KEY_TEMPLATES = {
@@ -44,7 +44,7 @@ CACHE_KEY_TEMPLATES = {
     'entity_dictionary': 'intent_system:entity_dict:{type_code}',
     'response_types': 'intent_system:response_types:{category}',
     'response_type': 'intent_system:response_type:{type_code}',
-    'conversation_statuses': 'intent_system:conv_statuses:all',
+    'conversation_status': 'intent_system:conv_status:all',
     'conversation_status': 'intent_system:conv_status:{status_code}',
     'system_configs': 'intent_system:system_config:{category}',
     'prompt_templates': 'intent_system:prompt_templates:{template_type}',
@@ -807,14 +807,14 @@ CACHE_KEY_TEMPLATES = {
 }
 ```
 
-### 14.4 对话状态缓存 (基于conversation_statuses表)
-**Key**: `intent_system:conv_statuses:all`
+### 14.4 对话状态缓存 (基于conversation_status表)
+**Key**: `intent_system:conv_status:all`
 **TTL**: 3600秒
 **数据结构**: JSON
 
 ```json
 {
-  "statuses": [
+  "status": [
     {
       "id": 1,
       "status_code": "completed",
@@ -822,7 +822,7 @@ CACHE_KEY_TEMPLATES = {
       "description": "对话成功完成",
       "category": "success",
       "is_final": true,
-      "next_allowed_statuses": [],
+      "next_allowed_status": [],
       "notification_required": false
     },
     {
@@ -832,7 +832,7 @@ CACHE_KEY_TEMPLATES = {
       "description": "正在进行槽位填充",
       "category": "processing",
       "is_final": false,
-      "next_allowed_statuses": ["completed", "validation_error", "cancelled"],
+      "next_allowed_status": ["completed", "validation_error", "cancelled"],
       "notification_required": false
     }
   ],
@@ -871,6 +871,58 @@ def publish_cache_invalidation_event(table_name: str, record_id: int, operation:
 def handle_invalidation_event(event):
     """处理缓存失效事件"""
     invalidation_service.process_event(event)
+
+## 15.3 v2.2修复的缓存服务初始化问题
+
+### CacheService初始化优化
+```python
+# 修复前的问题: Redis缓存服务未初始化警告
+# 修复: 调整服务初始化顺序，确保缓存服务在其他服务之前初始化
+
+# src/main.py 启动序列优化:
+@app.on_event("startup")
+async def startup_event():
+    """应用启动事件 - v2.2优化版本"""
+    logger.info("正在启动智能意图识别系统...")
+    
+    try:
+        # 1. 首先初始化缓存服务
+        from src.services.cache_service import CacheService
+        cache_service = CacheService()
+        await cache_service.initialize()
+        logger.info("缓存服务初始化完成")
+        
+        # 2. 初始化数据库连接
+        database.connect(reuse_if_open=True)
+        logger.info("数据库连接建立成功")
+        
+        # 3. 初始化其他服务
+        await initialize_system_services()
+        
+        # 4. 缓存预热（现在可以安全执行）
+        await cache_service.warmup_cache()
+        logger.info("缓存预热完成")
+        
+    except Exception as e:
+        logger.error(f"系统启动失败: {e}")
+        raise
+```
+
+### 修复的缓存方法名
+```python
+# 修复前: generate_key方法不存在
+# 修复后: 统一使用get_cache_key方法
+
+# 错误的调用方式:
+# cache_key = cache_service.generate_key(template, params)
+
+# 正确的调用方式:
+cache_key = cache_service.get_cache_key(template, **params)
+
+# 示例:
+session_key = cache_service.get_cache_key('session', session_id=session_id)
+user_key = cache_service.get_cache_key('user_profile', user_id=user_id)
+```
 ```
 
 ### 15.2 异步日志缓存

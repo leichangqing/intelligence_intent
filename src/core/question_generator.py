@@ -312,7 +312,7 @@ class IntelligentQuestionGenerator:
                     ))
                     
                 except Exception as e:
-                    logger.warning(f"模板生成失败: {e}")
+                    logger.warning(f"模板生成失败: {type(e).__name__}: {str(e)}")
         
         return candidates
     

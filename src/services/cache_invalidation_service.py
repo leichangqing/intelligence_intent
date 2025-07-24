@@ -457,7 +457,7 @@ async def get_cache_invalidation_service() -> CacheInvalidationService:
     """获取缓存失效服务实例（单例模式）"""
     global _cache_invalidation_service
     if _cache_invalidation_service is None:
-        from src.api.dependencies import get_cache_service
+        from src.services.cache_service import get_cache_service
         cache_service = await get_cache_service()
         _cache_invalidation_service = CacheInvalidationService(cache_service)
     return _cache_invalidation_service

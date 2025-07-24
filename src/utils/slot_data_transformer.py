@@ -28,10 +28,16 @@ class SlotDataTransformer:
         
         for slot_value in slot_values:
             slot_info = SlotInfo(
-                value=slot_value.normalized_value or slot_value.extracted_value,
+                name=slot_value.slot_name,
+                extracted_value=slot_value.extracted_value,
+                normalized_value=slot_value.normalized_value or slot_value.extracted_value,
                 confidence=float(slot_value.confidence) if slot_value.confidence else None,
-                source=slot_value.extraction_method,
+                extraction_method=slot_value.extraction_method,
                 original_text=slot_value.original_text,
+                is_confirmed=slot_value.validation_status == 'valid',
+                # 向后兼容字段
+                value=slot_value.normalized_value or slot_value.extracted_value,
+                source=slot_value.extraction_method,
                 is_validated=slot_value.validation_status == 'valid',
                 validation_error=slot_value.validation_error if slot_value.validation_status == 'invalid' else None
             )
@@ -92,18 +98,30 @@ class SlotDataTransformer:
             if isinstance(slot_data, dict):
                 # 缓存中存储的是完整SlotInfo格式
                 slot_info = SlotInfo(
-                    value=slot_data.get('value'),
+                    name=slot_name,
+                    extracted_value=slot_data.get('value'),
+                    normalized_value=slot_data.get('value'),
                     confidence=slot_data.get('confidence'),
-                    source=slot_data.get('source'),
+                    extraction_method=slot_data.get('source'),
                     original_text=slot_data.get('original_text'),
+                    is_confirmed=slot_data.get('is_validated', True),
+                    # 向后兼容字段
+                    value=slot_data.get('value'),
+                    source=slot_data.get('source'),
                     is_validated=slot_data.get('is_validated', True),
                     validation_error=slot_data.get('validation_error')
                 )
             else:
                 # 缓存中存储的是简单值
                 slot_info = SlotInfo(
-                    value=slot_data,
+                    name=slot_name,
+                    extracted_value=slot_data,
+                    normalized_value=slot_data,
                     confidence=None,
+                    extraction_method='cache',
+                    is_confirmed=True,
+                    # 向后兼容字段
+                    value=slot_data,
                     source='cache',
                     is_validated=True
                 )

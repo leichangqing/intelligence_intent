@@ -40,9 +40,6 @@ def get_ambiguity_detector() -> EnhancedAmbiguityDetector:
 def get_clarification_generator() -> ClarificationQuestionGenerator:
     return ClarificationQuestionGenerator()
 
-def get_cache_service() -> CacheService:
-    return CacheService()
-
 def get_context_manager() -> ContextManager:
     return ContextManager()
 

@@ -37,23 +37,21 @@ class Session(CommonModel):
     """会话记录表 - 与MySQL Schema对应"""
     
     session_id = CharField(max_length=100, unique=True, verbose_name="会话ID")
-    user_id = ForeignKeyField(User, field='user_id', on_delete='CASCADE', verbose_name="用户ID")
-    current_intent_id = IntegerField(null=True, verbose_name="当前意图ID")
-    current_intent_name = CharField(max_length=100, null=True, verbose_name="当前意图名称")
-    session_state = CharField(max_length=20, default='active', verbose_name="会话状态")  # active, paused, completed, expired, error
+    user_id = CharField(max_length=100, verbose_name="用户ID")  # 与数据库schema匹配
+    current_intent = CharField(max_length=100, null=True, verbose_name="当前意图")  # 与数据库字段匹配
+    session_state = CharField(max_length=20, default='active', verbose_name="会话状态")  # active, completed, expired, error
     context = JSONField(null=True, verbose_name="会话上下文")
     metadata = JSONField(null=True, verbose_name="元数据")
-    channel = CharField(max_length=50, null=True, verbose_name="渠道来源")
     expires_at = DateTimeField(null=True, verbose_name="过期时间")
     
     class Meta:
         table_name = 'sessions'
         indexes = (
             (('session_id',), False),
-            (('user_id', 'session_state'), False),
+            (('user_id',), False),
+            (('session_state',), False),
             (('expires_at',), False),
-            (('channel',), False),
-            (('session_state', 'updated_at'), False),
+            (('current_intent',), False),
         )
     
     def get_context(self) -> dict:
@@ -105,37 +103,33 @@ class Session(CommonModel):
         self.session_state = 'expired'
     
     def __str__(self):
-        return f"Session({self.session_id}: {self.user_id.user_id if hasattr(self.user_id, 'user_id') else self.user_id})"
+        return f"Session({self.session_id}: {self.user_id})"
 
 
 class Conversation(CommonModel):
     """对话历史表 - 与MySQL Schema对应"""
     
     id = BigAutoField(primary_key=True)  # 显式定义BIGINT主键
-    session = ForeignKeyField(Session, field='session_id', column_name='session_id', on_delete='CASCADE', verbose_name="会话ID")
-    user_id = ForeignKeyField(User, field='user_id', on_delete='CASCADE', verbose_name="用户ID")
-    conversation_turn = IntegerField(verbose_name="对话轮次")
+    session_id = CharField(max_length=100, verbose_name="会话ID")  # 与数据库字段匹配
+    user_id = CharField(max_length=100, verbose_name="用户ID")  # 与数据库字段匹配
     user_input = TextField(verbose_name="用户输入")
-    user_input_type = CharField(max_length=20, default='text', verbose_name="输入类型")  # text, voice, image, file
-    intent_id = IntegerField(null=True, verbose_name="识别的意图ID")
-    intent_name = CharField(max_length=100, null=True, verbose_name="识别的意图名称")
+    intent_recognized = CharField(max_length=100, null=True, verbose_name="识别的意图")  # 与数据库字段匹配
     confidence_score = DecimalField(max_digits=5, decimal_places=4, null=True, verbose_name="置信度分数")
-    # v2.2改进: 移除了slots_filled和slots_missing字段。这些信息应通过查询slot_values表动态获取。
     system_response = TextField(null=True, verbose_name="系统响应")
     response_type = CharField(max_length=50, null=True, verbose_name="响应类型")
-    response_metadata = JSONField(null=True, verbose_name="响应元数据")
-    status = CharField(max_length=30, default='processing', verbose_name="处理状态")  # processing, completed, failed, pending_user, ambiguous
+    status = CharField(max_length=50, null=True, verbose_name="处理状态")
     processing_time_ms = IntegerField(null=True, verbose_name="处理时间毫秒")
     error_message = TextField(null=True, verbose_name="错误信息")
+    metadata = JSONField(null=True, verbose_name="元数据")
     
     class Meta:
         table_name = 'conversations'
         indexes = (
-            (('session', 'conversation_turn'), True),  # 会话内对话轮次唯一
-            (('user_id', 'created_at'), False),
-            (('intent_id', 'confidence_score'), False),
-            (('status', 'created_at'), False),
-            (('response_type',), False),
+            (('session_id',), False),
+            (('user_id',), False),
+            (('intent_recognized',), False),
+            (('status',), False),
+            (('created_at',), False),
         )
     
     def get_slots_filled(self) -> dict:
@@ -143,11 +137,17 @@ class Conversation(CommonModel):
         v2.2改进: 从 slot_values 表动态获取已填充的槽位
         此方法现在需要查询相关的 slot_values 记录
         """
-        # TODO: 实现从slot_values表查询已填充槽位
         from src.services.slot_value_service import get_slot_value_service
         try:
             slot_value_service = get_slot_value_service()
-            return slot_value_service.get_conversation_filled_slots(self.id)
+            import asyncio
+            # 使用现有的异步方法获取对话槽位
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                return loop.run_until_complete(slot_value_service.get_conversation_slots(self.id, include_invalid=False))
+            finally:
+                loop.close()
         except Exception:
             return {}
     
@@ -156,11 +156,24 @@ class Conversation(CommonModel):
         v2.2改进: 从 slot_values 表动态获取缺失的槽位
         此方法现在需要基于意图定义和已填充槽位计算
         """
-        # TODO: 实现基于意图定义和已填充槽位计算缺失槽位
         from src.services.slot_value_service import get_slot_value_service
+        from src.models.intent import Intent
         try:
             slot_value_service = get_slot_value_service()
-            return slot_value_service.get_conversation_missing_slots(self.id, self.intent_name)
+            # 获取意图对象
+            if self.intent_recognized:
+                intent = Intent.get(Intent.intent_name == self.intent_recognized)
+                import asyncio
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    # 获取槽位状态信息
+                    status_info = loop.run_until_complete(
+                        slot_value_service.get_conversation_slots_status(self, intent)
+                    )
+                    return status_info.get('missing_required_slots', [])
+                finally:
+                    loop.close()
         except Exception:
             return []
     
@@ -200,7 +213,7 @@ class Conversation(CommonModel):
         return self.processing_time_ms and self.processing_time_ms < threshold_ms
     
     def __str__(self):
-        return f"Conversation({self.session.session_id}: {self.user_input[:50]}...)"
+        return f"Conversation({self.session_id}: {self.user_input[:50]}...)"
 
 
 class IntentAmbiguity(CommonModel):
