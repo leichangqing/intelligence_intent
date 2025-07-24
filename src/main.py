@@ -15,6 +15,7 @@ from src.api.v1 import chat, admin, analytics, health, tasks
 from src.api.middleware import RateLimitMiddleware, SecurityMiddleware, LoggingMiddleware
 from src.api.exceptions import setup_exception_handlers
 from src.services.cache_service import CacheService
+from src.services.startup_service import get_startup_service
 from src.utils.logger import setup_logging, get_logger
 
 # 设置日志
@@ -43,11 +44,15 @@ async def lifespan(app: FastAPI):
         await cache_service.initialize()
         logger.info("Redis缓存初始化完成")
         
-        # 4. 预热缓存
+        # 4. 初始化系统服务（包括同义词服务）
+        startup_service = await get_startup_service()
+        logger.info("系统服务初始化完成")
+        
+        # 5. 预热缓存
         await _warm_up_cache()
         logger.info("缓存预热完成")
         
-        # 5. 初始化NLU引擎
+        # 6. 初始化NLU引擎
         from src.core.nlu_engine import NLUEngine
         nlu_engine = NLUEngine()
         await nlu_engine.initialize()

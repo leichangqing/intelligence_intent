@@ -194,7 +194,7 @@ async def nlu_health(
         test_text = "测试NLU引擎健康状态"
         
         # 执行意图识别测试
-        intent_result = await nlu_engine.recognize_intent(test_text)
+        intent_result = await nlu_engine.recognize_intent(test_text, active_intents=None, context=None)
         
         # 执行实体提取测试
         entities_result = await nlu_engine.extract_entities(test_text)
@@ -345,7 +345,7 @@ async def _check_nlu_health() -> Dict[str, Any]:
             await nlu_engine.initialize()
         
         # 执行简单的意图识别测试
-        result = await nlu_engine.recognize_intent("健康检查测试")
+        result = await nlu_engine.recognize_intent("健康检查测试", active_intents=None, context=None)
         response_time = round((time.time() - start_time) * 1000, 2)
         
         return {

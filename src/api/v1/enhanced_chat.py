@@ -1,471 +1,33 @@
 """
-增强的聊天交互接口 (TASK-034)
-提供流式响应、会话管理优化、上下文保持和响应格式统一功能
+增强对话API接口 - 支持多轮对话和会话管理
+
+实现混合架构设计下的完整多轮对话功能：
+1. 会话生命周期管理
+2. 历史对话上下文推理
+3. 槽位继承和累积
+4. 意图转移检测
+5. 上下文引用解析
 """
-from typing import Dict, Any, AsyncGenerator, List, Optional
-from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, Request
-from fastapi.responses import StreamingResponse, JSONResponse
-from sse_starlette.sse import EventSourceResponse
-import asyncio
-import json
+from typing import Dict, Any, List, Optional
+from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
+from fastapi.responses import JSONResponse
 import time
 import uuid
-from datetime import datetime, timedelta
+import json
 
 from src.schemas.chat import (
-    ChatInteractRequest, ChatResponse, StreamChatRequest, StreamChatResponse,
-    SessionManagementRequest, SessionAnalyticsRequest, ContextUpdateRequest
+    ChatRequest, ChatResponse, SessionMetadata,
+    SessionManagementRequest, ContextUpdateRequest, SessionAnalyticsRequest
 )
 from src.schemas.common import StandardResponse
 from src.services.conversation_service import ConversationService
 from src.services.intent_service import IntentService
-from src.services.cache_service import CacheService
-from src.core.fallback_manager import get_fallback_manager
 from src.api.dependencies import get_conversation_service, get_intent_service
 from src.utils.logger import get_logger
-from src.utils.rate_limiter import RateLimiter
-from src.utils.context_manager import ContextManager
+from src.utils.response_transformer import get_response_transformer
 
 logger = get_logger(__name__)
-router = APIRouter(prefix="/enhanced-chat", tags=["增强聊天接口"])
-
-# 全局速率限制器
-rate_limiter = RateLimiter(
-    max_requests_per_minute=60,
-    max_requests_per_hour=1000
-)
-
-# 上下文管理器
-context_manager = ContextManager()
-
-
-@router.post("/stream", response_class=EventSourceResponse)
-async def stream_chat(
-    request: StreamChatRequest,
-    http_request: Request,
-    background_tasks: BackgroundTasks,
-    conversation_service: ConversationService = Depends(get_conversation_service),
-    intent_service: IntentService = Depends(get_intent_service)
-):
-    """
-    流式聊天接口
-    
-    实现实时流式响应，提供更好的用户体验：
-    1. Server-Sent Events (SSE) 流式传输
-    2. 分段响应处理
-    3. 实时状态更新
-    4. 异常处理和恢复
-    """
-    request_id = f"stream_{int(time.time())}_{uuid.uuid4().hex[:8]}"
-    
-    try:
-        # 速率限制检查
-        client_ip = http_request.client.host
-        if not await rate_limiter.check_rate_limit(request.user_id, client_ip):
-            raise HTTPException(status_code=429, detail="请求过于频繁，请稍后再试")
-        
-        logger.info(f"开始流式对话: {request_id}, 用户: {request.user_id}")
-        
-        # 创建流式响应生成器
-        async def generate_stream():
-            try:
-                # 发送开始事件
-                yield {
-                    "event": "start",
-                    "data": json.dumps({
-                        "request_id": request_id,
-                        "status": "processing",
-                        "timestamp": datetime.now().isoformat()
-                    })
-                }
-                
-                # 发送进度更新
-                yield {
-                    "event": "progress",
-                    "data": json.dumps({
-                        "stage": "intent_recognition",
-                        "progress": 20,
-                        "message": "正在识别意图..."
-                    })
-                }
-                
-                # 意图识别
-                intent_result = await intent_service.recognize_intent(
-                    request.input, request.user_id, request.context or {}
-                )
-                
-                yield {
-                    "event": "progress",
-                    "data": json.dumps({
-                        "stage": "intent_recognized",
-                        "progress": 40,
-                        "intent": intent_result.intent.intent_name if intent_result.intent else None,
-                        "confidence": intent_result.confidence
-                    })
-                }
-                
-                # 处理不同情况
-                if intent_result.is_ambiguous:
-                    # 处理歧义
-                    response = await _handle_ambiguous_stream(intent_result, request, conversation_service)
-                elif intent_result.intent is None:
-                    # RAGFLOW处理
-                    async for chunk in _handle_ragflow_stream(request, conversation_service):
-                        yield chunk
-                    return
-                else:
-                    # 明确意图处理
-                    async for chunk in _handle_intent_stream(intent_result, request, intent_service, conversation_service):
-                        yield chunk
-                    return
-                
-                # 发送最终响应
-                yield {
-                    "event": "response",
-                    "data": json.dumps(response.dict())
-                }
-                
-                yield {
-                    "event": "end",
-                    "data": json.dumps({
-                        "request_id": request_id,
-                        "status": "completed",
-                        "timestamp": datetime.now().isoformat()
-                    })
-                }
-                
-            except Exception as e:
-                logger.error(f"流式处理失败: {request_id}, 错误: {str(e)}")
-                
-                yield {
-                    "event": "error",
-                    "data": json.dumps({
-                        "error": "服务暂时不可用",
-                        "request_id": request_id,
-                        "timestamp": datetime.now().isoformat()
-                    })
-                }
-        
-        return EventSourceResponse(generate_stream())
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"流式聊天初始化失败: {request_id}, 错误: {str(e)}")
-        raise HTTPException(status_code=500, detail="服务暂时不可用")
-
-
-async def _handle_ragflow_stream(request: StreamChatRequest, 
-                               conversation_service: ConversationService) -> AsyncGenerator[Dict[str, Any], None]:
-    """处理RAGFLOW流式响应"""
-    
-    yield {
-        "event": "progress", 
-        "data": json.dumps({
-            "stage": "knowledge_search",
-            "progress": 60,
-            "message": "正在搜索知识库..."
-        })
-    }
-    
-    try:
-        # 调用RAGFLOW（支持流式）
-        ragflow_response = await conversation_service.call_ragflow_stream(
-            request.input, request.context or {}
-        )
-        
-        if hasattr(ragflow_response, '__aiter__'):
-            # 流式响应
-            accumulated_text = ""
-            chunk_count = 0
-            
-            async for chunk in ragflow_response:
-                chunk_count += 1
-                accumulated_text += chunk
-                
-                yield {
-                    "event": "partial_response",
-                    "data": json.dumps({
-                        "chunk": chunk,
-                        "accumulated_text": accumulated_text,
-                        "chunk_index": chunk_count
-                    })
-                }
-                
-                # 控制流速
-                await asyncio.sleep(0.05)
-            
-            # 最终响应
-            response = StreamChatResponse(
-                response=accumulated_text,
-                intent=None,
-                confidence=0.8,
-                status="ragflow_completed",
-                response_type="qa_response",
-                is_streaming=True,
-                chunk_count=chunk_count
-            )
-        else:
-            # 普通响应
-            response = StreamChatResponse(
-                response=ragflow_response.get('answer', '抱歉，暂时无法回答您的问题'),
-                intent=None,
-                confidence=0.8,
-                status="ragflow_completed",
-                response_type="qa_response",
-                is_streaming=False
-            )
-        
-        yield {
-            "event": "response",
-            "data": json.dumps(response.dict())
-        }
-        
-    except Exception as e:
-        logger.error(f"RAGFLOW流式处理失败: {str(e)}")
-        
-        # 回退响应
-        fallback_response = StreamChatResponse(
-            response="抱歉，暂时无法回答您的问题。请稍后再试或换个方式提问。",
-            intent=None,
-            confidence=0.0,
-            status="ragflow_error",
-            response_type="error_response",
-            error_message=str(e)
-        )
-        
-        yield {
-            "event": "response",
-            "data": json.dumps(fallback_response.dict())
-        }
-
-
-async def _handle_intent_stream(intent_result, request: StreamChatRequest,
-                              intent_service: IntentService,
-                              conversation_service: ConversationService) -> AsyncGenerator[Dict[str, Any], None]:
-    """处理意图流式响应"""
-    
-    yield {
-        "event": "progress",
-        "data": json.dumps({
-            "stage": "slot_extraction",
-            "progress": 60,
-            "message": "正在提取参数..."
-        })
-    }
-    
-    # 槽位提取
-    from src.api.dependencies import get_slot_service
-    slot_service = await get_slot_service()
-    
-    slot_result = await slot_service.extract_slots(
-        intent_result.intent, request.input, {}, request.context or {}
-    )
-    
-    yield {
-        "event": "progress",
-        "data": json.dumps({
-            "stage": "slots_extracted",
-            "progress": 80,
-            "slots": {k: v.value for k, v in slot_result.slots.items()},
-            "missing_slots": slot_result.missing_slots
-        })
-    }
-    
-    if slot_result.is_complete:
-        # 执行功能调用
-        yield {
-            "event": "progress",
-            "data": json.dumps({
-                "stage": "function_execution",
-                "progress": 90,
-                "message": "正在执行操作..."
-            })
-        }
-        
-        from src.api.dependencies import get_function_service
-        function_service = await get_function_service()
-        
-        function_result = await function_service.execute_function_call(
-            intent_result.intent, slot_result.slots, request.context or {}
-        )
-        
-        response = StreamChatResponse(
-            response=function_result.response_message,
-            intent=intent_result.intent.intent_name,
-            confidence=intent_result.confidence,
-            slots={k: v.dict() for k, v in slot_result.slots.items()},
-            status="completed",
-            response_type="function_result",
-            api_result=function_result.data,
-            is_streaming=False
-        )
-    else:
-        # 生成槽位询问
-        prompt_message = await slot_service.generate_slot_prompt(
-            intent_result.intent, slot_result.missing_slots, request.context or {}
-        )
-        
-        response = StreamChatResponse(
-            response=prompt_message,
-            intent=intent_result.intent.intent_name,
-            confidence=intent_result.confidence,
-            slots={k: v.dict() for k, v in slot_result.slots.items()},
-            status="incomplete",
-            response_type="slot_prompt",
-            missing_slots=slot_result.missing_slots,
-            is_streaming=False
-        )
-    
-    yield {
-        "event": "response",
-        "data": json.dumps(response.dict())
-    }
-
-
-async def _handle_ambiguous_stream(intent_result, request: StreamChatRequest,
-                                 conversation_service: ConversationService) -> StreamChatResponse:
-    """处理歧义流式响应"""
-    
-    # 生成歧义澄清问题
-    disambiguation_question = await conversation_service.generate_disambiguation_question(
-        intent_result.alternatives
-    )
-    
-    return StreamChatResponse(
-        response=disambiguation_question,
-        intent=None,
-        confidence=0.0,
-        status="ambiguous",
-        response_type="disambiguation",
-        ambiguous_intents=[
-            {
-                "intent_name": alt.intent.intent_name,
-                "display_name": alt.intent.display_name,
-                "confidence": alt.confidence
-            }
-            for alt in intent_result.alternatives
-        ],
-        is_streaming=False
-    )
-
-
-@router.post("/batch", response_model=StandardResponse[List[ChatResponse]])
-async def batch_chat(
-    requests: List[ChatInteractRequest],
-    background_tasks: BackgroundTasks,
-    conversation_service: ConversationService = Depends(get_conversation_service),
-    intent_service: IntentService = Depends(get_intent_service)
-):
-    """
-    批量聊天处理接口
-    
-    支持批量处理多个对话请求：
-    1. 并发处理优化
-    2. 错误隔离
-    3. 部分成功处理
-    4. 性能监控
-    """
-    batch_id = f"batch_{int(time.time())}_{uuid.uuid4().hex[:8]}"
-    start_time = time.time()
-    
-    try:
-        if len(requests) > 10:
-            raise HTTPException(status_code=400, detail="批量请求不能超过10个")
-        
-        logger.info(f"开始批量处理: {batch_id}, 请求数: {len(requests)}")
-        
-        # 并发处理所有请求
-        tasks = []
-        for i, request in enumerate(requests):
-            task = _process_single_chat_request(
-                request, f"{batch_id}_{i}", intent_service, conversation_service
-            )
-            tasks.append(task)
-        
-        # 等待所有任务完成
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        
-        # 处理结果
-        responses = []
-        success_count = 0
-        error_count = 0
-        
-        for i, result in enumerate(results):
-            if isinstance(result, Exception):
-                error_count += 1
-                error_response = ChatResponse(
-                    response="处理失败，请稍后重试",
-                    intent=None,
-                    confidence=0.0,
-                    slots={},
-                    status="error",
-                    response_type="error",
-                    next_action="retry",
-                    message_type="batch_error",
-                    request_id=f"{batch_id}_{i}"
-                )
-                responses.append(error_response)
-                logger.error(f"批量请求 {i} 处理失败: {str(result)}")
-            else:
-                success_count += 1
-                responses.append(result)
-        
-        processing_time = int((time.time() - start_time) * 1000)
-        
-        # 记录批量处理统计
-        background_tasks.add_task(
-            _record_batch_stats,
-            batch_id, len(requests), success_count, error_count, processing_time
-        )
-        
-        return StandardResponse(
-            success=True,
-            data=responses,
-            message=f"批量处理完成: {success_count} 成功, {error_count} 失败",
-            metadata={
-                "batch_id": batch_id,
-                "total_requests": len(requests),
-                "success_count": success_count,
-                "error_count": error_count,
-                "processing_time_ms": processing_time
-            }
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"批量处理失败: {batch_id}, 错误: {str(e)}")
-        raise HTTPException(status_code=500, detail="批量处理失败")
-
-
-async def _process_single_chat_request(
-    request: ChatInteractRequest,
-    request_id: str,
-    intent_service: IntentService,
-    conversation_service: ConversationService
-) -> ChatResponse:
-    """处理单个聊天请求"""
-    try:
-        # 意图识别
-        intent_result = await intent_service.recognize_intent(
-            request.input, request.user_id, request.context or {}
-        )
-        
-        # 处理逻辑（简化版）
-        if intent_result.is_ambiguous:
-            response = await _handle_batch_ambiguity(intent_result, conversation_service)
-        elif intent_result.intent is None:
-            response = await _handle_batch_ragflow(request, conversation_service)
-        else:
-            response = await _handle_batch_intent(intent_result, request, intent_service, conversation_service)
-        
-        response.request_id = request_id
-        return response
-        
-    except Exception as e:
-        logger.error(f"单个请求处理失败: {request_id}, 错误: {str(e)}")
-        raise e
+router = APIRouter(prefix="/enhanced-chat", tags=["增强对话接口"])
 
 
 @router.post("/session/create", response_model=StandardResponse[Dict[str, Any]])
@@ -474,44 +36,40 @@ async def create_session(
     conversation_service: ConversationService = Depends(get_conversation_service)
 ):
     """
-    创建会话
+    创建新的对话会话
     
-    优化的会话管理：
-    1. 会话生命周期管理
-    2. 上下文持久化
-    3. 会话状态跟踪
-    4. 资源清理
+    支持多轮对话的会话生命周期管理：
+    1. 创建会话并分配唯一ID
+    2. 初始化会话上下文
+    3. 设置会话过期时间
+    4. 返回会话信息
     """
     try:
-        session = await conversation_service.get_or_create_session(
-            request.user_id, None
+        logger.info(f"创建会话请求: 用户={request.user_id}")
+        
+        # 创建新会话
+        session_data = await conversation_service.create_session(
+            user_id=request.user_id,
+            initial_context=request.initial_context or {},
+            expiry_hours=request.expiry_hours or 24
         )
-        
-        session_info = {
-            "session_id": session.session_id,
-            "user_id": session.user_id,
-            "created_at": session.created_at.isoformat(),
-            "expires_at": (session.created_at + timedelta(hours=24)).isoformat(),
-            "status": "active",
-            "context": session.get_context()
-        }
-        
-        # 初始化会话上下文
-        await context_manager.initialize_session_context(
-            session.session_id, request.user_id, request.initial_context or {}
-        )
-        
-        logger.info(f"创建会话: {session.session_id}, 用户: {request.user_id}")
         
         return StandardResponse(
             success=True,
-            data=session_info,
+            data={
+                "session_id": session_data["session_id"],
+                "user_id": session_data["user_id"],
+                "session_state": session_data["session_state"],
+                "expires_at": session_data["expires_at"],
+                "created_at": session_data["created_at"],
+                "context": session_data.get("context", {})
+            },
             message="会话创建成功"
         )
         
     except Exception as e:
-        logger.error(f"创建会话失败: 用户 {request.user_id}, 错误: {str(e)}")
-        raise HTTPException(status_code=500, detail="会话创建失败")
+        logger.error(f"创建会话失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"创建会话失败: {str(e)}")
 
 
 @router.post("/session/update-context", response_model=StandardResponse[Dict[str, Any]])
@@ -520,259 +78,342 @@ async def update_session_context(
     conversation_service: ConversationService = Depends(get_conversation_service)
 ):
     """
-    更新会话上下文
+    更新会话上下文信息
     
-    增强的上下文管理：
-    1. 增量更新
-    2. 上下文验证
-    3. 历史追踪
-    4. 冲突解决
+    支持动态上下文更新：
+    1. 合并或替换上下文数据
+    2. 保留历史记录（可选）
+    3. 触发相关缓存更新
     """
     try:
-        # 验证会话存在
-        session = await conversation_service.get_session_by_id(request.session_id)
-        if not session:
-            raise HTTPException(status_code=404, detail="会话不存在")
+        logger.info(f"更新会话上下文: {request.session_id}")
         
-        # 更新上下文
-        updated_context = await context_manager.update_context(
-            request.session_id,
-            request.context_updates,
-            merge_strategy=request.merge_strategy
+        # 更新会话上下文
+        updated_context = await conversation_service.update_session_context(
+            session_id=request.session_id,
+            context_updates=request.context_updates,
+            merge_strategy=request.merge_strategy,
+            preserve_history=request.preserve_history
         )
         
-        # 保存到数据库
-        success = await conversation_service.update_session_context(
-            request.session_id, updated_context
+        return StandardResponse(
+            success=True,
+            data={
+                "session_id": request.session_id,
+                "updated_context": updated_context,
+                "merge_strategy": request.merge_strategy,
+                "updated_at": time.time()
+            },
+            message="会话上下文更新成功"
         )
         
-        if success:
-            return StandardResponse(
-                success=True,
-                data={
-                    "session_id": request.session_id,
-                    "updated_context": updated_context,
-                    "merge_strategy": request.merge_strategy,
-                    "updated_at": datetime.now().isoformat()
-                },
-                message="上下文更新成功"
-            )
-        else:
-            raise HTTPException(status_code=500, detail="上下文更新失败")
-        
-    except HTTPException:
-        raise
     except Exception as e:
-        logger.error(f"更新会话上下文失败: {request.session_id}, 错误: {str(e)}")
-        raise HTTPException(status_code=500, detail="更新上下文失败")
+        logger.error(f"更新会话上下文失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"更新会话上下文失败: {str(e)}")
 
 
 @router.get("/session/{session_id}/analytics", response_model=StandardResponse[Dict[str, Any]])
 async def get_session_analytics(
     session_id: str,
+    include_details: bool = False,
     conversation_service: ConversationService = Depends(get_conversation_service)
 ):
     """
     获取会话分析数据
     
-    提供会话性能和质量分析：
+    提供详细的会话统计信息：
     1. 对话轮次统计
-    2. 意图识别准确率
+    2. 意图识别分布
     3. 响应时间分析
-    4. 用户满意度评估
+    4. 槽位填充统计
+    5. 错误率统计
     """
     try:
-        # 获取会话历史
-        history = await conversation_service.get_conversation_history(session_id, limit=100)
+        logger.info(f"获取会话分析: {session_id}")
         
-        # 计算分析数据
-        analytics = await _calculate_session_analytics(history)
+        # 获取会话分析数据
+        analytics_data = await conversation_service.get_session_analytics(
+            session_id=session_id,
+            include_details=include_details
+        )
         
         return StandardResponse(
             success=True,
-            data=analytics,
+            data=analytics_data,
             message="会话分析获取成功"
         )
         
     except Exception as e:
-        logger.error(f"获取会话分析失败: {session_id}, 错误: {str(e)}")
-        raise HTTPException(status_code=500, detail="获取会话分析失败")
+        logger.error(f"获取会话分析失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"获取会话分析失败: {str(e)}")
 
 
-async def _calculate_session_analytics(history: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """计算会话分析数据"""
-    if not history:
-        return {
-            "total_turns": 0,
-            "average_confidence": 0.0,
-            "average_response_time": 0.0,
-            "intent_distribution": {},
-            "response_type_distribution": {},
-            "success_rate": 0.0
-        }
+@router.get("/session/{session_id}/history", response_model=StandardResponse[List[Dict[str, Any]]])
+async def get_conversation_history(
+    session_id: str,
+    limit: int = 20,
+    offset: int = 0,
+    conversation_service: ConversationService = Depends(get_conversation_service)
+):
+    """
+    获取对话历史记录
     
-    total_turns = len(history)
-    total_confidence = sum(h.get('confidence', 0.0) for h in history)
-    total_response_time = sum(h.get('processing_time_ms', 0) for h in history)
-    
-    # 意图分布
-    intent_distribution = {}
-    for h in history:
-        intent = h.get('intent')
-        if intent:
-            intent_distribution[intent] = intent_distribution.get(intent, 0) + 1
-    
-    # 响应类型分布
-    response_type_distribution = {}
-    for h in history:
-        response_type = h.get('response_type', 'unknown')
-        response_type_distribution[response_type] = response_type_distribution.get(response_type, 0) + 1
-    
-    # 成功率计算
-    successful_turns = sum(
-        1 for h in history 
-        if h.get('status') in ['completed', 'ragflow_handled']
-    )
-    success_rate = successful_turns / total_turns if total_turns > 0 else 0.0
-    
-    return {
-        "total_turns": total_turns,
-        "average_confidence": total_confidence / total_turns if total_turns > 0 else 0.0,
-        "average_response_time": total_response_time / total_turns if total_turns > 0 else 0.0,
-        "intent_distribution": intent_distribution,
-        "response_type_distribution": response_type_distribution,
-        "success_rate": success_rate,
-        "quality_score": _calculate_quality_score(history)
-    }
-
-
-def _calculate_quality_score(history: List[Dict[str, Any]]) -> float:
-    """计算会话质量分数"""
-    if not history:
-        return 0.0
-    
-    # 基于多个维度计算质量分数
-    confidence_score = sum(h.get('confidence', 0.0) for h in history) / len(history)
-    success_rate = sum(1 for h in history if h.get('status') in ['completed', 'ragflow_handled']) / len(history)
-    response_time_score = min(1.0, 5000 / (sum(h.get('processing_time_ms', 5000) for h in history) / len(history)))
-    
-    # 综合评分
-    quality_score = (confidence_score * 0.4 + success_rate * 0.4 + response_time_score * 0.2)
-    return round(quality_score, 3)
-
-
-# 辅助函数
-async def _handle_batch_ambiguity(intent_result, conversation_service) -> ChatResponse:
-    """批量处理中的歧义处理"""
-    question = await conversation_service.generate_disambiguation_question(
-        intent_result.alternatives
-    )
-    
-    return ChatResponse(
-        response=question,
-        intent=None,
-        confidence=0.0,
-        slots={},
-        status="ambiguous",
-        response_type="disambiguation",
-        next_action="user_choice",
-        ambiguous_intents=[
-            {
-                "intent_name": alt.intent.intent_name,
-                "display_name": alt.intent.display_name,
-                "confidence": alt.confidence
-            }
-            for alt in intent_result.alternatives
-        ],
-        message_type="batch_ambiguous"
-    )
-
-
-async def _handle_batch_ragflow(request, conversation_service) -> ChatResponse:
-    """批量处理中的RAGFLOW处理"""
+    提供完整的对话历史：
+    1. 分页查询对话记录
+    2. 包含意图识别结果
+    3. 包含槽位填充状态
+    4. 包含响应类型信息
+    """
     try:
-        ragflow_response = await conversation_service.call_ragflow(
-            request.input, request.context or {}
-        )
+        logger.info(f"获取对话历史: {session_id}, limit={limit}, offset={offset}")
         
-        return ChatResponse(
-            response=ragflow_response.get('answer', '抱歉，暂时无法回答您的问题'),
-            intent=None,
-            confidence=ragflow_response.get('confidence', 0.0),
-            slots={},
-            status="ragflow_handled",
-            response_type="qa_response",
-            next_action="none",
-            message_type="batch_ragflow"
+        # 获取对话历史
+        history_data = await conversation_service.get_conversation_history(
+            session_id=session_id,
+            limit=limit,
+            offset=offset
         )
-        
-    except Exception as e:
-        return ChatResponse(
-            response="抱歉，知识库查询失败，请稍后重试",
-            intent=None,
-            confidence=0.0,
-            slots={},
-            status="ragflow_error",
-            response_type="error_response",
-            next_action="retry",
-            message_type="batch_error"
-        )
-
-
-async def _handle_batch_intent(intent_result, request, intent_service, conversation_service) -> ChatResponse:
-    """批量处理中的意图处理"""
-    # 简化的意图处理逻辑
-    return ChatResponse(
-        response=f"识别到意图: {intent_result.intent.display_name}，正在处理中...",
-        intent=intent_result.intent.intent_name,
-        confidence=intent_result.confidence,
-        slots={},
-        status="processing",
-        response_type="intent_response",
-        next_action="processing",
-        message_type="batch_intent"
-    )
-
-
-async def _record_batch_stats(batch_id: str, total: int, success: int, 
-                            error: int, processing_time: int):
-    """记录批量处理统计"""
-    try:
-        # 这里可以记录到数据库或监控系统
-        logger.info(f"批量处理统计: {batch_id}, 总数: {total}, 成功: {success}, "
-                   f"失败: {error}, 处理时间: {processing_time}ms")
-    except Exception as e:
-        logger.error(f"记录批量统计失败: {str(e)}")
-
-
-@router.get("/health", response_model=StandardResponse[Dict[str, Any]])
-async def health_check():
-    """增强聊天接口健康检查"""
-    try:
-        health_status = {
-            "status": "healthy",
-            "timestamp": datetime.now().isoformat(),
-            "version": "2.0.0",
-            "features": {
-                "streaming": True,
-                "batch_processing": True,
-                "session_management": True,
-                "context_preservation": True,
-                "analytics": True
-            },
-            "performance": {
-                "average_response_time": "< 200ms",
-                "concurrent_users_supported": 1000,
-                "batch_size_limit": 10
-            }
-        }
         
         return StandardResponse(
             success=True,
-            data=health_status,
-            message="增强聊天接口运行正常"
+            data=history_data,
+            message="对话历史获取成功"
         )
         
     except Exception as e:
-        logger.error(f"健康检查失败: {str(e)}")
-        raise HTTPException(status_code=500, detail="健康检查失败")
+        logger.error(f"获取对话历史失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"获取对话历史失败: {str(e)}")
+
+
+@router.get("/session/{session_id}/current-state", response_model=StandardResponse[Dict[str, Any]])
+async def get_session_current_state(
+    session_id: str,
+    conversation_service: ConversationService = Depends(get_conversation_service)
+):
+    """
+    获取会话当前状态
+    
+    提供会话的实时状态：
+    1. 当前意图状态
+    2. 已填充的槽位
+    3. 缺失的槽位
+    4. 会话元数据
+    """
+    try:
+        logger.info(f"获取会话状态: {session_id}")
+        
+        # 获取会话当前状态
+        current_state = await conversation_service.get_session_current_state(session_id)
+        
+        return StandardResponse(
+            success=True,
+            data=current_state,
+            message="会话状态获取成功"
+        )
+        
+    except Exception as e:
+        logger.error(f"获取会话状态失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"获取会话状态失败: {str(e)}")
+
+
+@router.post("/session/{session_id}/reset", response_model=StandardResponse[Dict[str, Any]])
+async def reset_session(
+    session_id: str,
+    preserve_context: bool = True,
+    conversation_service: ConversationService = Depends(get_conversation_service)
+):
+    """
+    重置会话状态
+    
+    重置会话到初始状态：
+    1. 清除当前意图状态
+    2. 清除槽位填充
+    3. 可选保留基础上下文
+    4. 保留历史记录
+    """
+    try:
+        logger.info(f"重置会话: {session_id}, preserve_context={preserve_context}")
+        
+        # 重置会话状态
+        reset_result = await conversation_service.reset_session_state(
+            session_id=session_id,
+            preserve_context=preserve_context
+        )
+        
+        return StandardResponse(
+            success=True,
+            data=reset_result,
+            message="会话重置成功"
+        )
+        
+    except Exception as e:
+        logger.error(f"重置会话失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"重置会话失败: {str(e)}")
+
+
+@router.delete("/session/{session_id}", response_model=StandardResponse[Dict[str, Any]])
+async def delete_session(
+    session_id: str,
+    conversation_service: ConversationService = Depends(get_conversation_service)
+):
+    """
+    删除会话
+    
+    完全删除会话及其相关数据：
+    1. 删除会话记录
+    2. 删除对话历史
+    3. 删除槽位数据
+    4. 清理相关缓存
+    """
+    try:
+        logger.info(f"删除会话: {session_id}")
+        
+        # 删除会话
+        delete_result = await conversation_service.delete_session(session_id)
+        
+        return StandardResponse(
+            success=True,
+            data=delete_result,
+            message="会话删除成功"
+        )
+        
+    except Exception as e:
+        logger.error(f"删除会话失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"删除会话失败: {str(e)}")
+
+
+@router.post("/multi-turn-interact", response_model=StandardResponse[ChatResponse])
+async def multi_turn_interact(
+    request: ChatRequest,
+    background_tasks: BackgroundTasks,
+    conversation_service: ConversationService = Depends(get_conversation_service),
+    intent_service: IntentService = Depends(get_intent_service)
+):
+    """
+    多轮对话交互接口
+    
+    专门为多轮对话优化的交互接口：
+    1. 自动会话管理
+    2. 智能上下文推理
+    3. 槽位继承和累积
+    4. 意图转移检测
+    5. 对话状态跟踪
+    """
+    start_time = time.time()
+    request_id = f"multi_req_{int(time.time())}_{uuid.uuid4().hex[:8]}"
+    
+    try:
+        logger.info(f"多轮对话请求: {request_id}, 用户: {request.user_id}")
+        
+        # 如果没有session_id，自动创建新会话
+        if not request.session_id:
+            session_data = await conversation_service.create_session(
+                user_id=request.user_id,
+                initial_context=request.context.model_dump() if request.context else {}
+            )
+            session_id = session_data["session_id"]
+        else:
+            session_id = request.session_id
+        
+        # 获取完整的会话上下文和历史
+        session_context = await conversation_service.get_full_session_context(session_id)
+        
+        # 执行多轮对话推理
+        response = await _execute_multi_turn_reasoning(
+            request.input, session_context, intent_service, conversation_service
+        )
+        
+        # 更新会话状态
+        await conversation_service.update_session_state_after_turn(
+            session_id, response, session_context
+        )
+        
+        # 记录处理时间
+        processing_time = int((time.time() - start_time) * 1000)
+        response.processing_time_ms = processing_time
+        response.request_id = request_id
+        
+        return StandardResponse(
+            success=True,
+            data=response,
+            message="多轮对话处理成功"
+        )
+        
+    except Exception as e:
+        logger.error(f"多轮对话处理失败: {request_id}, 错误: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"多轮对话处理失败: {str(e)}")
+
+
+async def _execute_multi_turn_reasoning(
+    user_input: str,
+    session_context: Dict[str, Any],
+    intent_service: IntentService,
+    conversation_service: ConversationService
+) -> ChatResponse:
+    """
+    执行多轮对话推理
+    
+    这是多轮对话的核心推理引擎：
+    1. 分析用户输入的上下文语义
+    2. 解析代词和引用
+    3. 继承历史槽位
+    4. 执行意图识别和槽位提取
+    5. 生成适当的响应
+    """
+    # 1. 上下文语义分析
+    context_analysis = await conversation_service.analyze_input_context(
+        user_input, session_context
+    )
+    
+    # 2. 意图识别（基于历史上下文）
+    intent_result = await intent_service.recognize_intent_with_context(
+        user_input, session_context, context_analysis
+    )
+    
+    # 3. 槽位处理（继承和更新）
+    slot_result = await conversation_service.process_slots_with_inheritance(
+        intent_result, user_input, session_context
+    )
+    
+    # 4. 生成响应
+    if slot_result.is_complete:
+        # 执行业务逻辑
+        response = await conversation_service.execute_business_logic(
+            intent_result, slot_result, session_context
+        )
+    else:
+        # 生成槽位询问
+        response = await conversation_service.generate_smart_slot_prompt(
+            intent_result, slot_result, session_context
+        )
+    
+    return response
+
+
+@router.get("/session/{session_id}/context-resolution", response_model=StandardResponse[List[Dict[str, Any]]])
+async def get_context_resolution_history(
+    session_id: str,
+    conversation_service: ConversationService = Depends(get_conversation_service)
+):
+    """
+    获取上下文解析历史
+    
+    显示系统如何解析代词引用和上下文：
+    1. 代词引用解析记录
+    2. 槽位继承链路
+    3. 上下文推理过程
+    """
+    try:
+        logger.info(f"获取上下文解析历史: {session_id}")
+        
+        resolution_history = await conversation_service.get_context_resolution_history(session_id)
+        
+        return StandardResponse(
+            success=True,
+            data=resolution_history,
+            message="上下文解析历史获取成功"
+        )
+        
+    except Exception as e:
+        logger.error(f"获取上下文解析历史失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))

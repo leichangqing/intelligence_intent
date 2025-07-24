@@ -15,6 +15,7 @@ import hashlib
 import json
 
 from src.services.cache_service import CacheService
+from src.services.synonym_service import get_synonym_service_sync
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -114,9 +115,18 @@ class QueryNormalizer:
     """查询规范化器"""
     
     def __init__(self):
-        self.stop_words = self._load_stop_words()
-        self.synonym_dict = self._load_synonym_dict()
-        self.entity_patterns = self._load_entity_patterns()
+        # 尝试从同义词服务获取数据，如果失败则使用默认数据
+        self.synonym_service = get_synonym_service_sync()
+        if self.synonym_service:
+            self.stop_words = self.synonym_service.get_stop_words()
+            self.synonym_dict = self.synonym_service.get_reverse_synonym_dict()
+            self.entity_patterns = self.synonym_service.get_entity_patterns()
+        else:
+            # 如果同义词服务未初始化，使用默认数据
+            logger.warning("同义词服务未初始化，使用默认数据")
+            self.stop_words = self._load_stop_words()
+            self.synonym_dict = self._load_synonym_dict()
+            self.entity_patterns = self._load_entity_patterns()
     
     def _load_stop_words(self) -> set:
         """加载停用词"""
@@ -216,11 +226,15 @@ class QueryNormalizer:
     
     def _replace_synonyms(self, query: str) -> str:
         """同义词替换"""
-        for standard_term, synonyms in self.synonym_dict.items():
-            for synonym in synonyms:
-                query = query.replace(synonym, standard_term)
-        
-        return query
+        if self.synonym_service:
+            # 使用同义词服务进行替换
+            return self.synonym_service.replace_synonyms(query)
+        else:
+            # fallback到传统方式
+            for standard_term, synonyms in self.synonym_dict.items():
+                for synonym in synonyms:
+                    query = query.replace(synonym, standard_term)
+            return query
     
     def _process_stop_words(self, query: str) -> str:
         """处理停用词"""

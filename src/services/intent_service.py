@@ -7,6 +7,10 @@ from datetime import datetime
 from src.models.intent import Intent
 from src.models.conversation import Conversation, IntentAmbiguity
 from src.services.cache_service import CacheService
+from src.services.audit_service import AuditService, AuditAction
+from src.services.cache_invalidation_service import CacheInvalidationService, CacheInvalidationType
+from src.services.config_management_service import get_config_management_service
+from src.core.event_system import get_event_system, EventType
 from src.core.nlu_engine import NLUEngine
 from src.core.confidence_manager import ConfidenceManager, ThresholdDecision
 from src.core.ambiguity_detector import EnhancedAmbiguityDetector, AmbiguityAnalysis
@@ -18,51 +22,26 @@ from src.core.intent_confirmation_manager import (
     IntentConfirmationManager, ConfirmationContext, ConfirmationTrigger,
     ConfirmationStrategy, ConfirmationResponse, RiskLevel, get_confirmation_manager
 )
+from src.schemas.intent_recognition import IntentRecognitionResult
 from src.utils.logger import get_logger
 from src.config.settings import settings
 
 logger = get_logger(__name__)
 
 
-class IntentRecognitionResult:
-    """意图识别结果类"""
-    
-    def __init__(self, intent: Optional[Intent], confidence: float, 
-                 alternatives: List[Dict] = None, is_ambiguous: bool = False):
-        self.intent = intent
-        self.confidence = confidence
-        self.alternatives = alternatives or []
-        self.is_ambiguous = is_ambiguous
-        self.recognition_type = self._determine_recognition_type()
-    
-    def _determine_recognition_type(self) -> str:
-        """确定识别类型"""
-        if self.is_ambiguous:
-            return "ambiguous"
-        elif self.intent and self.confidence >= 0.8:
-            return "confident"
-        elif self.intent and self.confidence >= 0.5:
-            return "uncertain"
-        else:
-            return "unrecognized"
-    
-    def to_dict(self) -> Dict:
-        """转换为字典格式"""
-        return {
-            "intent": self.intent.intent_name if self.intent else None,
-            "confidence": self.confidence,
-            "recognition_type": self.recognition_type,
-            "alternatives": self.alternatives,
-            "is_ambiguous": self.is_ambiguous
-        }
-
-
 class IntentService:
     """意图识别服务类"""
     
-    def __init__(self, cache_service: CacheService, nlu_engine: NLUEngine):
+    def __init__(self, cache_service: CacheService, nlu_engine: NLUEngine,
+                 audit_service: Optional[AuditService] = None,
+                 cache_invalidation_service: Optional[CacheInvalidationService] = None):
         self.cache_service = cache_service
         self.nlu_engine = nlu_engine
+        self.audit_service = audit_service or AuditService()
+        self.cache_invalidation_service = cache_invalidation_service or CacheInvalidationService(cache_service)
+        # V2.2重构: 集成配置管理服务和事件系统
+        self.config_management_service = get_config_management_service()
+        self.event_system = get_event_system()
         self.confidence_manager = ConfidenceManager(settings)
         self.ambiguity_threshold = settings.AMBIGUITY_DETECTION_THRESHOLD
         self.enhanced_ambiguity_detector = EnhancedAmbiguityDetector(settings)
@@ -87,7 +66,8 @@ class IntentService:
         """
         try:
             # 1. 检查缓存中是否有相同输入的识别结果
-            cache_key = f"intent_recognition:{hash(user_input)}:{user_id}"
+            input_hash = abs(hash(user_input))
+            cache_key = self.cache_service.get_cache_key('intent_recognition', input_hash=input_hash, user_id=user_id)
             cached_result = await self.cache_service.get(cache_key)
             if cached_result:
                 logger.info(f"从缓存获取意图识别结果: {user_input[:50]}")
@@ -97,11 +77,16 @@ class IntentService:
             active_intents = await self._get_active_intents()
             if not active_intents:
                 logger.warning("没有找到活跃的意图配置")
-                return IntentRecognitionResult(None, 0.0)
+                return IntentRecognitionResult.from_intent_service_result(
+                    intent=None, 
+                    confidence=0.0,
+                    user_input=user_input,
+                    context=context
+                )
             
             # 3. 使用NLU引擎进行意图识别
             nlu_result = await self.nlu_engine.recognize_intent(
-                user_input, context
+                user_input, active_intents=None, context=context
             )
             
             # 将NLU结果转换为标准格式
@@ -124,7 +109,184 @@ class IntentService:
             
         except Exception as e:
             logger.error(f"意图识别失败: {str(e)}")
-            return IntentRecognitionResult(None, 0.0)
+            return IntentRecognitionResult.from_intent_service_result(
+                intent=None, 
+                confidence=0.0,
+                user_input=user_input,
+                context=context
+            )
+    
+    async def recognize_intent_with_history(
+        self, 
+        user_input: str, 
+        user_id: str, 
+        session_context: Dict[str, Any],
+        conversation_history: List[Dict[str, Any]]
+    ) -> IntentRecognitionResult:
+        """
+        基于历史对话的意图识别（混合架构设计）
+        
+        Args:
+            user_input: 用户输入文本
+            user_id: 用户ID
+            session_context: 会话上下文
+            conversation_history: 对话历史
+            
+        Returns:
+            IntentRecognitionResult: 意图识别结果
+        """
+        try:
+            # 构建增强的上下文信息
+            enhanced_context = {
+                **(session_context or {}),
+                'conversation_history': conversation_history,
+                'current_turn': session_context.get('current_turn', 1),
+                'current_slots': session_context.get('current_slots', {}),
+                'user_id': user_id
+            }
+            
+            # 检查是否存在上下文相关的缓存
+            context_hash = abs(hash(str(enhanced_context)))
+            input_hash = abs(hash(user_input))
+            cache_key = self.cache_service.get_cache_key(
+                'intent_recognition_with_history', 
+                input_hash=input_hash, 
+                user_id=user_id,
+                context_hash=context_hash
+            )
+            
+            cached_result = await self.cache_service.get(cache_key)
+            if cached_result:
+                logger.info(f"从缓存获取历史增强的意图识别结果: {user_input[:50]}")
+                return self._deserialize_result(cached_result)
+            
+            # 分析对话历史，提取上下文线索
+            historical_context = self._analyze_conversation_history(conversation_history)
+            
+            # 合并历史分析结果到上下文
+            enhanced_context.update({
+                'historical_intents': historical_context.get('recent_intents', []),
+                'historical_entities': historical_context.get('entities', {}),
+                'conversation_topic': historical_context.get('topic', None),
+                'interaction_pattern': historical_context.get('pattern', 'linear')
+            })
+            
+            # 使用增强上下文进行意图识别
+            result = await self.recognize_intent(user_input, user_id, enhanced_context)
+            
+            # 基于历史调整置信度
+            if result.intent and conversation_history:
+                adjusted_confidence = self._adjust_confidence_with_history(
+                    result, conversation_history, enhanced_context
+                )
+                result.confidence = adjusted_confidence
+                
+                # 重新判断是否需要歧义处理
+                if adjusted_confidence < 0.6 and len(result.alternatives) > 1:
+                    result.is_ambiguous = True
+            
+            # 缓存增强识别结果
+            await self.cache_service.set(
+                cache_key, self._serialize_result(result), ttl=1800
+            )
+            
+            logger.info(
+                f"历史增强意图识别完成: {user_input[:50]} -> "
+                f"{result.intent.intent_name if result.intent else 'None'} "
+                f"(置信度: {result.confidence:.3f})"
+            )
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"历史增强意图识别失败: {str(e)}")
+            # 回退到基础意图识别
+            return await self.recognize_intent(user_input, user_id, session_context)
+    
+    def _analyze_conversation_history(self, conversation_history: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """分析对话历史，提取上下文线索"""
+        if not conversation_history:
+            return {}
+        
+        try:
+            recent_intents = []
+            entities = {}
+            topics = []
+            
+            # 分析最近几轮对话
+            for turn in conversation_history[-5:]:  # 最近5轮
+                if turn.get('intent_recognized'):
+                    recent_intents.append(turn['intent_recognized'])
+                
+                if turn.get('slots_extracted'):
+                    entities.update(turn['slots_extracted'])
+                
+                if turn.get('system_response'):
+                    # 简单的主题提取（可以后续增强）
+                    response = turn['system_response']
+                    if '机票' in response or '航班' in response:
+                        topics.append('flight_booking')
+                    elif '银行' in response or '余额' in response:
+                        topics.append('banking')
+            
+            # 确定主要话题
+            main_topic = max(set(topics), key=topics.count) if topics else None
+            
+            # 确定交互模式
+            pattern = 'multi_turn' if len(conversation_history) > 3 else 'linear'
+            
+            return {
+                'recent_intents': recent_intents[-3:],  # 最近3个意图
+                'entities': entities,
+                'topic': main_topic,
+                'pattern': pattern,
+                'turn_count': len(conversation_history)
+            }
+            
+        except Exception as e:
+            logger.warning(f"分析对话历史失败: {str(e)}")
+            return {}
+    
+    def _adjust_confidence_with_history(
+        self, 
+        result: IntentRecognitionResult, 
+        conversation_history: List[Dict[str, Any]],
+        enhanced_context: Dict[str, Any]
+    ) -> float:
+        """基于历史对话调整置信度"""
+        try:
+            base_confidence = result.confidence
+            adjustment = 0.0
+            
+            # 意图连续性检查
+            recent_intents = enhanced_context.get('historical_intents', [])
+            if result.intent and recent_intents:
+                if result.intent.intent_name in recent_intents:
+                    adjustment += 0.1  # 同一意图连续出现，增加置信度
+            
+            # 槽位延续性检查
+            current_slots = enhanced_context.get('current_slots', {})
+            if current_slots and result.intent:
+                # 如果当前输入可能在延续之前的槽位填充
+                slot_names = [slot.slot_name for slot in result.intent.slots]
+                overlapping_slots = set(current_slots.keys()) & set(slot_names)
+                if overlapping_slots:
+                    adjustment += 0.05  # 槽位延续，小幅增加置信度
+            
+            # 对话长度调整
+            turn_count = len(conversation_history)
+            if turn_count > 1:
+                # 多轮对话中，适当提高置信度
+                adjustment += min(0.1, turn_count * 0.02)
+            
+            # 应用调整但确保在合理范围内
+            adjusted_confidence = min(1.0, max(0.0, base_confidence + adjustment))
+            
+            return adjusted_confidence
+            
+        except Exception as e:
+            logger.warning(f"调整置信度失败: {str(e)}")
+            return result.confidence
     
     async def _get_active_intents(self) -> List[Intent]:
         """获取所有活跃的意图配置"""
@@ -138,6 +300,19 @@ class IntentService:
         
         # 缓存结果
         await self.cache_service.set("active_intents", intents, ttl=3600)
+        
+        # 记录审计日志 - 系统查询活跃意图
+        try:
+            await self.audit_service.log_config_change(
+                table_name="intents",
+                record_id=0,
+                action=AuditAction.INSERT,  # 使用INSERT表示查询操作
+                old_values=None,
+                new_values={"action": "query_active_intents", "count": len(intents)},
+                operator_id="intent_service"
+            )
+        except Exception as e:
+            logger.warning(f"记录意图查询审计日志失败: {str(e)}")
         
         return intents
     
@@ -155,7 +330,12 @@ class IntentService:
             IntentRecognitionResult: 分析后的结果
         """
         if not results:
-            return IntentRecognitionResult(None, 0.0)
+            return IntentRecognitionResult.from_intent_service_result(
+                intent=None, 
+                confidence=0.0,
+                user_input=user_input,
+                context=context
+            )
         
         # 按置信度排序
         results.sort(key=lambda x: x['confidence'], reverse=True)
@@ -198,7 +378,12 @@ class IntentService:
                 self.confidence_manager.update_intent_statistics(
                     top_intent.intent_name, top_confidence, success=False
                 )
-            return IntentRecognitionResult(None, top_confidence)
+            return IntentRecognitionResult.from_intent_service_result(
+                intent=None, 
+                confidence=top_confidence,
+                user_input=user_input,
+                context=context
+            )
         
         # 使用增强的歧义检测
         if len(results) > 1:
@@ -256,11 +441,24 @@ class IntentService:
                     
                     if auto_resolved_intent:
                         logger.info(f"自动解决歧义成功: {auto_resolved_intent.intent_name}")
-                        return IntentRecognitionResult(auto_resolved_intent, top_confidence)
+                        return IntentRecognitionResult.from_intent_service_result(
+                            intent=auto_resolved_intent, 
+                            confidence=top_confidence,
+                            user_input=user_input,
+                            context=context
+                        )
                     
                     # 自动解决失败，返回歧义结果
-                    return IntentRecognitionResult(
-                        None, top_confidence, valid_alternatives, is_ambiguous=True
+                    return IntentRecognitionResult.from_intent_service_result(
+                        intent=None, 
+                        confidence=top_confidence, 
+                        alternatives=[{
+                            'intent_name': alt['intent_name'],
+                            'confidence': alt['confidence']
+                        } for alt in valid_alternatives],
+                        is_ambiguous=True,
+                        user_input=user_input,
+                        context=context
                     )
         
         # 单一明确的意图 - 更新成功统计
@@ -268,7 +466,12 @@ class IntentService:
             top_intent.intent_name, top_confidence, success=True
         )
         
-        return IntentRecognitionResult(top_intent, top_confidence)
+        return IntentRecognitionResult.from_intent_service_result(
+            intent=top_intent, 
+            confidence=top_confidence,
+            user_input=user_input,
+            context=context
+        )
     
     async def _get_intent_by_name(self, intent_name: str) -> Optional[Intent]:
         """根据名称获取意图对象"""
@@ -917,28 +1120,24 @@ class IntentService:
     
     def _serialize_result(self, result: IntentRecognitionResult) -> Dict:
         """序列化识别结果用于缓存"""
-        return {
-            'intent_name': result.intent.intent_name if result.intent else None,
-            'confidence': result.confidence,
-            'alternatives': result.alternatives,
-            'is_ambiguous': result.is_ambiguous,
-            'recognition_type': result.recognition_type
-        }
+        return result.to_legacy_intent_service_format()
     
     def _deserialize_result(self, data: Dict) -> IntentRecognitionResult:
         """从缓存数据反序列化识别结果"""
         intent = None
-        if data.get('intent_name'):
-            intent = Intent.get(Intent.intent_name == data['intent_name'])
+        if data.get('intent_name') or data.get('intent'):
+            intent_name = data.get('intent_name') or data.get('intent')
+            try:
+                intent = Intent.get(Intent.intent_name == intent_name)
+            except:
+                pass
         
-        result = IntentRecognitionResult(
+        return IntentRecognitionResult.from_intent_service_result(
             intent=intent,
-            confidence=data['confidence'],
+            confidence=data.get('confidence', 0.0),
             alternatives=data.get('alternatives', []),
             is_ambiguous=data.get('is_ambiguous', False)
         )
-        result.recognition_type = data.get('recognition_type', result._determine_recognition_type())
-        return result
     
     async def get_confidence_statistics(self) -> Dict:
         """获取置信度统计信息"""
@@ -978,7 +1177,7 @@ class IntentService:
             return {'error': str(e)}
     
     async def update_intent_feedback(self, intent_name: str, confidence: float, 
-                                   user_confirmed: bool) -> bool:
+                                   user_confirmed: bool, user_id: str = "anonymous") -> bool:
         """
         更新意图反馈用于自适应阈值调整
         
@@ -986,6 +1185,7 @@ class IntentService:
             intent_name: 意图名称
             confidence: 置信度
             user_confirmed: 用户是否确认了意图
+            user_id: 用户ID
             
         Returns:
             bool: 更新是否成功
@@ -994,6 +1194,26 @@ class IntentService:
             self.confidence_manager.update_intent_statistics(
                 intent_name, confidence, user_confirmed
             )
+            
+            # 记录意图反馈审计日志
+            try:
+                intent = await self._get_intent_by_name(intent_name)
+                await self.audit_service.log_config_change(
+                    table_name="intent_feedback",
+                    record_id=intent.id if intent else 0,
+                    action=AuditAction.UPDATE,
+                    old_values={"intent_name": intent_name, "previous_confidence": confidence},
+                    new_values={
+                        "intent_name": intent_name,
+                        "confidence": confidence,
+                        "user_confirmed": user_confirmed,
+                        "updated_at": datetime.now().isoformat()
+                    },
+                    operator_id=user_id
+                )
+            except Exception as audit_error:
+                logger.warning(f"记录意图反馈审计日志失败: {str(audit_error)}")
+            
             logger.info(f"更新意图反馈: {intent_name} (置信度: {confidence:.3f}, 确认: {user_confirmed})")
             return True
         except Exception as e:
@@ -1537,6 +1757,214 @@ class IntentService:
             logger.error(f"获取用户确认画像失败: {str(e)}")
             return {'error': str(e)}
     
+    async def create_intent(self, intent_data: Dict[str, Any], operator_id: str = "system") -> Optional[Intent]:
+        """
+        创建意图并记录审计日志
+        
+        Args:
+            intent_data: 意图数据
+            operator_id: 操作者ID
+            
+        Returns:
+            Optional[Intent]: 创建的意图对象
+        """
+        try:
+            # 创建意图
+            intent = Intent.create(**intent_data)
+            
+            # 记录审计日志
+            await self.audit_service.log_config_change(
+                table_name="intents",
+                record_id=intent.id,
+                action=AuditAction.INSERT,
+                old_values=None,
+                new_values=intent_data,
+                operator_id=operator_id
+            )
+            
+            # 失效相关缓存
+            await self.cache_invalidation_service.invalidate_intent_caches(
+                intent.id, intent.intent_name, CacheInvalidationType.CONFIG_CHANGE
+            )
+            
+            logger.info(f"意图创建成功: {intent.intent_name} by {operator_id}")
+            return intent
+            
+        except Exception as e:
+            logger.error(f"创建意图失败: {str(e)}")
+            return None
+    
+    async def update_intent(self, intent_id: int, updates: Dict[str, Any], 
+                          operator_id: str = "system") -> bool:
+        """
+        更新意图并记录审计日志
+        
+        Args:
+            intent_id: 意图ID
+            updates: 更新数据
+            operator_id: 操作者ID
+            
+        Returns:
+            bool: 更新是否成功
+        """
+        try:
+            # 获取原始数据
+            intent = Intent.get_by_id(intent_id)
+            old_values = {
+                'intent_name': intent.intent_name,
+                'display_name': intent.display_name,
+                'description': intent.description,
+                'is_active': intent.is_active,
+                'priority': intent.priority,
+                'confidence_threshold': float(intent.confidence_threshold),
+                'updated_at': intent.updated_at.isoformat() if intent.updated_at else None
+            }
+            
+            # 执行更新
+            query = Intent.update(**updates).where(Intent.id == intent_id)
+            query.execute()
+            
+            # 获取更新后的数据
+            updated_intent = Intent.get_by_id(intent_id)
+            new_values = {
+                'intent_name': updated_intent.intent_name,
+                'display_name': updated_intent.display_name,
+                'description': updated_intent.description,
+                'is_active': updated_intent.is_active,
+                'priority': updated_intent.priority,
+                'confidence_threshold': float(updated_intent.confidence_threshold),
+                'updated_at': updated_intent.updated_at.isoformat() if updated_intent.updated_at else None
+            }
+            
+            # 记录审计日志
+            await self.audit_service.log_config_change(
+                table_name="intents",
+                record_id=intent_id,
+                action=AuditAction.UPDATE,
+                old_values=old_values,
+                new_values=new_values,
+                operator_id=operator_id
+            )
+            
+            # 失效相关缓存
+            await self.cache_invalidation_service.invalidate_intent_caches(
+                intent_id, updated_intent.intent_name, CacheInvalidationType.CONFIG_CHANGE
+            )
+            
+            logger.info(f"意图更新成功: {intent_id} by {operator_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"更新意图失败: {str(e)}")
+            return False
+    
+    async def delete_intent(self, intent_id: int, operator_id: str = "system") -> bool:
+        """
+        删除意图并记录审计日志
+        
+        Args:
+            intent_id: 意图ID
+            operator_id: 操作者ID
+            
+        Returns:
+            bool: 删除是否成功
+        """
+        try:
+            # 获取要删除的意图信息
+            intent = Intent.get_by_id(intent_id)
+            old_values = {
+                'intent_name': intent.intent_name,
+                'display_name': intent.display_name,
+                'description': intent.description,
+                'is_active': intent.is_active,
+                'priority': intent.priority,
+                'confidence_threshold': float(intent.confidence_threshold),
+                'deleted_at': datetime.now().isoformat()
+            }
+            
+            # 执行软删除或硬删除
+            intent.delete_instance()
+            
+            # 记录审计日志
+            await self.audit_service.log_config_change(
+                table_name="intents",
+                record_id=intent_id,
+                action=AuditAction.DELETE,
+                old_values=old_values,
+                new_values=None,
+                operator_id=operator_id
+            )
+            
+            # 失效相关缓存
+            await self.cache_invalidation_service.invalidate_intent_caches(
+                intent_id, intent.intent_name, CacheInvalidationType.CONFIG_CHANGE
+            )
+            
+            logger.info(f"意图删除成功: {intent_id} by {operator_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"删除意图失败: {str(e)}")
+            return False
+    
+    async def bulk_update_intents(self, updates: List[Dict[str, Any]], 
+                                operator_id: str = "system") -> Dict[str, Any]:
+        """
+        批量更新意图
+        
+        Args:
+            updates: 更新列表，每个元素包含 {'id': int, 'data': dict}
+            operator_id: 操作者ID
+            
+        Returns:
+            Dict[str, Any]: 批量更新结果
+        """
+        try:
+            successful = 0
+            failed = 0
+            errors = []
+            
+            for update in updates:
+                intent_id = update.get('id')
+                update_data = update.get('data', {})
+                
+                if await self.update_intent(intent_id, update_data, operator_id):
+                    successful += 1
+                else:
+                    failed += 1
+                    errors.append(f"Intent {intent_id} update failed")
+            
+            result = {
+                'successful': successful,
+                'failed': failed,
+                'total': len(updates),
+                'errors': errors,
+                'timestamp': datetime.now().isoformat()
+            }
+            
+            # 记录批量操作审计日志
+            await self.audit_service.log_config_change(
+                table_name="intents",
+                record_id=0,
+                action=AuditAction.UPDATE,
+                old_values=None,
+                new_values=result,
+                operator_id=operator_id
+            )
+            
+            logger.info(f"批量更新意图完成: {successful}/{len(updates)} 成功")
+            return result
+            
+        except Exception as e:
+            logger.error(f"批量更新意图失败: {str(e)}")
+            return {
+                'successful': 0,
+                'failed': len(updates),
+                'total': len(updates),
+                'errors': [str(e)],
+                'timestamp': datetime.now().isoformat()
+            }
+    
     async def recognize_intent_with_confirmation(self, user_input: str, user_id: str,
                                                context: Dict = None) -> Tuple[IntentRecognitionResult, Optional[str]]:
         """
@@ -1581,3 +2009,81 @@ class IntentService:
             # 返回错误的识别结果
             error_result = IntentRecognitionResult(None, 0.0)
             return error_result, None
+    
+    # V2.2重构: 新增配置管理方法，集成事件驱动架构
+    async def create_intent_config(
+        self,
+        intent_data: Dict[str, Any],
+        operator_id: str = 'system'
+    ) -> Dict[str, Any]:
+        """
+        创建意图配置（使用统一的配置管理服务）
+        
+        Args:
+            intent_data: 意图数据
+            operator_id: 操作者ID
+            
+        Returns:
+            Dict: 操作结果
+        """
+        result = await self.config_management_service.create_intent(intent_data, operator_id)
+        return result.to_dict()
+    
+    async def update_intent_config(
+        self,
+        intent_id: int,
+        updates: Dict[str, Any],
+        operator_id: str = 'system'
+    ) -> Dict[str, Any]:
+        """
+        更新意图配置（使用统一的配置管理服务）
+        
+        Args:
+            intent_id: 意图ID
+            updates: 更新数据
+            operator_id: 操作者ID
+            
+        Returns:
+            Dict: 操作结果
+        """
+        result = await self.config_management_service.update_intent(intent_id, updates, operator_id)
+        return result.to_dict()
+    
+    async def delete_intent_config(
+        self,
+        intent_id: int,
+        operator_id: str = 'system'
+    ) -> Dict[str, Any]:
+        """
+        删除意图配置（使用统一的配置管理服务）
+        
+        Args:
+            intent_id: 意图ID
+            operator_id: 操作者ID
+            
+        Returns:
+            Dict: 操作结果
+        """
+        result = await self.config_management_service.delete_intent(intent_id, operator_id)
+        return result.to_dict()
+    
+    async def get_intent_change_history(
+        self,
+        intent_id: Optional[int] = None,
+        limit: int = 100
+    ) -> List[Dict[str, Any]]:
+        """
+        获取意图配置变更历史
+        
+        Args:
+            intent_id: 意图ID，为None时获取所有意图的变更历史
+            limit: 返回记录数限制
+            
+        Returns:
+            List[Dict]: 变更历史列表
+        """
+        return await self.config_management_service.get_config_change_history(
+            entity_type='intent',
+            entity_id=intent_id,
+            limit=limit
+        )

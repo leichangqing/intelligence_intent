@@ -11,11 +11,12 @@
 - **JWT Token**: 用于用户身份认证
 - **API Key**: 用于系统间调用认证
 
-### 1.3 无状态设计说明
-- **架构特点**: B2B架构下采用无状态设计，每次请求都是独立的业务处理
-- **请求特点**: 前端系统发送完整的用户输入，无需多轮对话
-- **意图处理**: 系统基于单次请求进行意图识别和业务处理
-- **状态管理**: 前端系统负责业务状态管理，意图系统不维持用户状态
+### 1.3 混合架构设计说明
+- **计算层无状态**: 服务器内存不保存会话状态，支持水平扩展和故障恢复
+- **存储层有状态**: 通过数据库持久化会话历史，支持多轮对话上下文理解
+- **多轮对话支持**: 系统根据session_id查询历史对话，进行上下文相关的意图识别
+- **状态管理**: 服务器负责维护对话状态持久化，客户端提供当前请求上下文
+- **处理模式**: 支持单轮完整请求和多轮渐进式对话两种模式
 
 ### 1.4 通用响应格式
 ```json
@@ -44,25 +45,32 @@
 
 **参数说明**:
 - `user_id`: 用户标识符，用于用户上下文和个性化分析
-- `input`: 用户输入的完整文本内容
-- `context`: 请求上下文信息（设备信息、位置信息等）
+- `input`: 用户输入的文本内容
+- `session_id`: 会话标识符，用于查询和维护多轮对话状态（必需）
+- `context`: 当前请求上下文信息（设备信息、位置信息等）
 
-**无状态意图识别**:
-系统基于单次请求进行意图识别和处理：
-- 分析用户输入的意图类型
-- 从缓存中加载意图定义和配置
-- 执行意图匹配和槽位提取
-- 直接返回处理结果或调用外部API
+**多轮对话意图识别**:
+系统基于当前输入和历史对话进行智能处理：
+- 根据session_id查询历史对话和槽位状态
+- 结合历史信息理解当前输入的意图和实体
+- 累积更新槽位信息，支持渐进式信息收集
+- 当意图和必要槽位完整时，执行业务逻辑
+- 将当前对话轮次持久化到数据库
 
 #### 请求参数
 ```json
 {
   "user_id": "user123",
   "input": "我想订一张明天从北京到上海的机票",
+  "session_id": "sess_abc123456",
   "context": {
     "device_info": {
       "platform": "web",
       "user_agent": "Mozilla/5.0..."
+    },
+    "request_metadata": {
+      "timestamp": "2024-12-01T10:00:00Z",
+      "client_version": "1.0.0"
     }
   }
 }
@@ -76,23 +84,49 @@
   "message": "Success",
   "data": {
     "response": "好的，已为您查询到明天从北京到上海的机票，价格为1200元。是否需要预订？",
+    "session_id": "sess_abc123456",
+    "conversation_turn": 1,
     "intent": "book_flight",
     "confidence": 0.95,
     "slots": {
       "departure_city": {
-        "value": "北京",
+        "name": "departure_city",
+        "original_text": "北京",
+        "extracted_value": "北京",
+        "normalized_value": "北京市",
         "confidence": 0.98,
-        "source": "user_input"
+        "extraction_method": "user_input",
+        "validation": {
+          "status": "valid",
+          "error_message": null
+        },
+        "is_confirmed": true
       },
       "arrival_city": {
-        "value": "上海",
+        "name": "arrival_city",
+        "original_text": "上海",
+        "extracted_value": "上海",
+        "normalized_value": "上海市",
         "confidence": 0.97,
-        "source": "user_input"
+        "extraction_method": "user_input",
+        "validation": {
+          "status": "valid",
+          "error_message": null
+        },
+        "is_confirmed": true
       },
       "departure_date": {
-        "value": "2024-12-02",
+        "name": "departure_date",
+        "original_text": "明天",
+        "extracted_value": "明天",
+        "normalized_value": "2024-12-02",
         "confidence": 0.90,
-        "source": "user_input"
+        "extraction_method": "nlp_processing",
+        "validation": {
+          "status": "valid",
+          "error_message": null
+        },
+        "is_confirmed": false
       }
     },
     "status": "completed",
@@ -106,8 +140,19 @@
         "arrival_time": "10:30"
       }
     },
-    "processing_time_ms": 250,
-    "message_type": "intent_request"
+    "session_metadata": {
+      "total_turns": 1,
+      "session_duration_seconds": 15,
+      "context_history": [
+        {
+          "turn": 1,
+          "user_input": "我想订一张明天从北京到上海的机票",
+          "intent": "book_flight",
+          "timestamp": "2024-12-01T10:00:00Z"
+        }
+      ]
+    },
+    "processing_time_ms": 250
   },
   "timestamp": "2024-12-01T10:00:00Z",
   "request_id": "req_20241201_001"
@@ -122,16 +167,140 @@ curl -X POST "http://localhost:8000/api/v1/chat/interact" \
   -d '{
     "user_id": "user123",
     "input": "我想订一张明天从北京到上海的机票",
+    "session_id": "sess_abc123456",
     "context": {
       "device_info": {
         "platform": "web",
         "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+      },
+      "request_metadata": {
+        "timestamp": "2024-12-01T10:00:00Z",
+        "client_version": "1.0.0"
       }
     }
   }'
 ```
 
-### 2.2 不同意图类型处理示例
+### 2.2 多轮对话处理示例
+
+#### 2.2.1 多轮对话场景演示
+
+**第一轮对话 - 初始意图识别**
+
+**请求参数**
+```json
+{
+  "user_id": "user123",
+  "input": "我想订机票",
+  "session_id": "sess_abc123456",
+  "context": {
+    "device_info": {"platform": "web"}
+  }
+}
+```
+
+**响应示例**
+```json
+{
+  "success": true,
+  "code": 200,
+  "message": "Success",
+  "data": {
+    "response": "好的，我来帮您订机票。请问您从哪里出发？",
+    "session_id": "sess_abc123456",
+    "conversation_turn": 1,
+    "intent": "book_flight",
+    "confidence": 0.95,
+    "slots": {},
+    "status": "incomplete",
+    "response_type": "slot_prompt",
+    "next_action": "collect_missing_slots",
+    "missing_slots": ["departure_city", "arrival_city", "departure_date"],
+    "session_metadata": {
+      "total_turns": 1,
+      "session_duration_seconds": 2
+    },
+    "processing_time_ms": 180
+  }
+}
+```
+
+**第二轮对话 - 槽位填充**
+
+**请求参数**
+```json
+{
+  "user_id": "user123",
+  "input": "从北京到上海",
+  "session_id": "sess_abc123456",
+  "context": {
+    "device_info": {"platform": "web"}
+  }
+}
+```
+
+**响应示例**
+```json
+{
+  "success": true,
+  "code": 200,
+  "message": "Success",
+  "data": {
+    "response": "北京到上海，请问您什么时候出发？",
+    "session_id": "sess_abc123456",
+    "conversation_turn": 2,
+    "intent": "book_flight",
+    "confidence": 0.98,
+    "slots": {
+      "departure_city": {
+        "name": "departure_city",
+        "original_text": "北京",
+        "extracted_value": "北京",
+        "normalized_value": "北京市",
+        "confidence": 0.95,
+        "extraction_method": "user_input",
+        "validation": {"status": "valid", "error_message": null},
+        "is_confirmed": false
+      },
+      "arrival_city": {
+        "name": "arrival_city",
+        "original_text": "上海",
+        "extracted_value": "上海", 
+        "normalized_value": "上海市",
+        "confidence": 0.96,
+        "extraction_method": "user_input",
+        "validation": {"status": "valid", "error_message": null},
+        "is_confirmed": false
+      }
+    },
+    "status": "incomplete",
+    "response_type": "slot_prompt",
+    "next_action": "collect_missing_slots",
+    "missing_slots": ["departure_date"],
+    "session_metadata": {
+      "total_turns": 2,
+      "session_duration_seconds": 25,
+      "context_history": [
+        {
+          "turn": 1,
+          "user_input": "我想订机票",
+          "intent": "book_flight",
+          "timestamp": "2024-12-01T10:00:00Z"
+        },
+        {
+          "turn": 2,
+          "user_input": "从北京到上海",
+          "intent": "book_flight",
+          "timestamp": "2024-12-01T10:00:23Z"
+        }
+      ]
+    },
+    "processing_time_ms": 165
+  }
+}
+```
+
+### 2.3 不同意图类型处理示例
 **注意**: 所有意图请求均使用同一接口 `POST /api/v1/chat/interact`
 
 **描述**: 系统自动分析用户输入并返回相应的意图识别结果
@@ -169,7 +338,6 @@ curl -X POST "http://localhost:8000/api/v1/chat/interact" \
       {"intent": "book_flight", "confidence": 0.85},
       {"intent": "book_hotel", "confidence": 0.83}
     ],
-    "message_type": "ambiguous_intent",
     "processing_time_ms": 180
   }
 }
@@ -206,7 +374,6 @@ curl -X POST "http://localhost:8000/api/v1/chat/interact" \
     "response_type": "slot_prompt",
     "next_action": "collect_missing_slots",
     "missing_slots": ["departure_city", "arrival_city", "departure_date"],
-    "message_type": "incomplete_intent",
     "processing_time_ms": 200
   }
 }
@@ -253,12 +420,66 @@ curl -X GET "http://localhost:8000/api/v1/admin/intents" \
   "intent_name": "book_hotel",
   "display_name": "预订酒店",
   "description": "用户想要预订酒店的意图",
+  "category": "booking",
   "confidence_threshold": 0.8,
   "priority": 5,
   "examples": [
     "我想订酒店",
     "帮我预订酒店",
     "找个酒店住"
+  ],
+  "slots": [
+    {
+      "slot_name": "hotel_city",
+      "display_name": "酒店城市",
+      "slot_type": "text",
+      "is_required": true,
+      "is_list": false,
+      "validation_rules": {
+        "min_length": 2,
+        "max_length": 20,
+        "pattern": "^[\\u4e00-\\u9fa5]+$"
+      },
+      "default_value": null,
+      "prompt_template": "请告诉我您要在哪个城市订酒店？",
+      "error_message": "请输入有效的城市名称（2-20个中文字符）",
+      "extraction_priority": 1,
+      "is_active": true
+    },
+    {
+      "slot_name": "check_in_date",
+      "display_name": "入住日期",
+      "slot_type": "date",
+      "is_required": true,
+      "is_list": false,
+      "validation_rules": {
+        "format": "YYYY-MM-DD",
+        "min_date": "today",
+        "max_date": "today+365d"
+      },
+      "default_value": null,
+      "prompt_template": "请告诉我您的入住日期？",
+      "error_message": "请输入有效的入住日期（格式：YYYY-MM-DD）",
+      "extraction_priority": 2,
+      "is_active": true
+    },
+    {
+      "slot_name": "check_out_date",
+      "display_name": "退房日期",
+      "slot_type": "date",
+      "is_required": true,
+      "is_list": false,
+      "validation_rules": {
+        "format": "YYYY-MM-DD",
+        "min_date": "check_in_date+1d",
+        "max_date": "check_in_date+30d"
+      },
+      "default_value": null,
+      "prompt_template": "请告诉我您的退房日期？",
+      "error_message": "退房日期必须晚于入住日期",
+      "extraction_priority": 3,
+      "is_active": true
+    }
   ]
 }
 ```
@@ -272,12 +493,23 @@ curl -X POST "http://localhost:8000/api/v1/admin/intents" \
     "intent_name": "book_hotel",
     "display_name": "预订酒店",
     "description": "用户想要预订酒店的意图",
+    "category": "booking",
     "confidence_threshold": 0.8,
     "priority": 5,
     "examples": [
       "我想订酒店",
       "帮我预订酒店",
       "找个酒店住"
+    ],
+    "slots": [
+      {
+        "slot_name": "hotel_city",
+        "display_name": "酒店城市",
+        "slot_type": "text",
+        "is_required": true,
+        "prompt_template": "请告诉我您要在哪个城市订酒店？",
+        "error_message": "请输入有效的城市名称"
+      }
     ]
   }'
 ```

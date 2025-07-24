@@ -6,10 +6,13 @@ from peewee import *
 from src.config.database import BaseModel
 
 
-class TimestampMixin:
+class TimestampMixin(Model):
     """时间戳混入类"""
     created_at = DateTimeField(default=datetime.now, verbose_name="创建时间")
     updated_at = DateTimeField(default=datetime.now, verbose_name="更新时间")
+    
+    class Meta:
+        abstract = True
     
     def save(self, *args, **kwargs):
         """重写保存方法，自动更新时间戳"""
@@ -19,10 +22,13 @@ class TimestampMixin:
         return super().save(*args, **kwargs)
 
 
-class SoftDeleteMixin:
+class SoftDeleteMixin(Model):
     """软删除混入类"""
     is_deleted = BooleanField(default=False, verbose_name="是否删除")
     deleted_at = DateTimeField(null=True, verbose_name="删除时间")
+    
+    class Meta:
+        abstract = True
     
     def soft_delete(self):
         """软删除方法"""
@@ -37,10 +43,13 @@ class SoftDeleteMixin:
         self.save()
 
 
-class AuditMixin:
+class AuditMixin(Model):
     """审计混入类"""
     created_by = CharField(max_length=100, null=True, verbose_name="创建者")
     updated_by = CharField(max_length=100, null=True, verbose_name="更新者")
+    
+    class Meta:
+        abstract = True
     
     def set_creator(self, user_id: str):
         """设置创建者"""

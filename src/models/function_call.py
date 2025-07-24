@@ -108,7 +108,8 @@ class FunctionCall(CommonModel):
 class ApiCallLog(CommonModel):
     """API调用日志表"""
     
-    conversation = ForeignKeyField(Conversation, backref='api_calls', on_delete='CASCADE', verbose_name="对话记录")
+    id = BigAutoField(primary_key=True)  # 显式定义BIGINT主键
+    conversation_id = BigIntegerField(verbose_name="对话记录ID")
     function_call = ForeignKeyField(FunctionCall, backref='call_logs', on_delete='SET NULL', null=True, verbose_name="功能调用配置")
     function_name = CharField(max_length=100, verbose_name="函数名称")
     api_endpoint = CharField(max_length=500, verbose_name="API端点")
@@ -124,7 +125,7 @@ class ApiCallLog(CommonModel):
     class Meta:
         table_name = 'api_call_logs'
         indexes = (
-            (('conversation',), False),
+            (('conversation_id',), False),
             (('function_name',), False),
             (('success',), False),
             (('status_code',), False),
@@ -208,10 +209,11 @@ class ApiCallLog(CommonModel):
 class AsyncTask(CommonModel):
     """异步任务管理表"""
     
+    id = BigAutoField(primary_key=True)  # 显式定义BIGINT主键
     task_id = CharField(max_length=100, unique=True, verbose_name="任务ID")
     task_type = CharField(max_length=50, verbose_name="任务类型")  # api_call, batch_process, data_export
     status = CharField(max_length=20, default='pending', verbose_name="任务状态")  # pending, processing, completed, failed, cancelled
-    conversation = ForeignKeyField(Conversation, null=True, backref='async_tasks', on_delete='SET NULL', verbose_name="关联对话")
+    conversation_id = BigIntegerField(null=True, verbose_name="关联对话ID")
     user_id = CharField(max_length=100, verbose_name="用户ID")
     request_data = TextField(null=True, verbose_name="请求数据JSON")
     result_data = TextField(null=True, verbose_name="结果数据JSON")
@@ -226,7 +228,7 @@ class AsyncTask(CommonModel):
             (('task_id',), False),
             (('status',), False),
             (('user_id',), False),
-            (('conversation',), False),
+            (('conversation_id',), False),
             (('task_type',), False),
             (('created_at',), False),
         )

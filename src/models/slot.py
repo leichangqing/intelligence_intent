@@ -2,6 +2,7 @@
 槽位相关数据模型
 """
 from peewee import *
+from playhouse.mysql_ext import JSONField
 from .base import CommonModel
 from .intent import Intent
 import json
@@ -12,11 +13,17 @@ class Slot(CommonModel):
     
     intent = ForeignKeyField(Intent, backref='slots', on_delete='CASCADE', verbose_name="关联意图")
     slot_name = CharField(max_length=100, verbose_name="槽位名称")
-    slot_type = CharField(max_length=50, verbose_name="槽位类型")  # TEXT, DATE, NUMBER, ENUM等
+    display_name = CharField(max_length=200, null=True, verbose_name="显示名称")
+    slot_type = CharField(max_length=50, verbose_name="槽位类型",
+                         constraints=[Check("slot_type IN ('text', 'number', 'date', 'time', 'email', 'phone', 'entity', 'boolean')")])
     is_required = BooleanField(default=False, verbose_name="是否必填")
-    validation_rules = TextField(null=True, verbose_name="验证规则JSON")
+    is_list = BooleanField(default=False, verbose_name="是否为列表类型")
+    validation_rules = JSONField(null=True, verbose_name="验证规则")
+    default_value = TextField(null=True, verbose_name="默认值")
     prompt_template = TextField(null=True, verbose_name="询问模板")
-    examples = TextField(null=True, verbose_name="示例值JSON")
+    error_message = TextField(null=True, verbose_name="错误提示")
+    extraction_priority = IntegerField(default=1, verbose_name="提取优先级")
+    is_active = BooleanField(default=True, verbose_name="是否激活")
     
     class Meta:
         table_name = 'slots'
@@ -28,31 +35,18 @@ class Slot(CommonModel):
     
     def get_validation_rules(self) -> dict:
         """获取验证规则字典"""
-        # 将JSON字符串转换为Python字典
         if self.validation_rules:
-            try:
-                return json.loads(self.validation_rules)
-            except json.JSONDecodeError:
-                return {}
+            return self.validation_rules if isinstance(self.validation_rules, dict) else {}
         return {}
     
     def set_validation_rules(self, rules: dict):
         """设置验证规则"""
-        # 将Python字典转换为JSON字符串存储
-        self.validation_rules = json.dumps(rules, ensure_ascii=False)
+        self.validation_rules = rules
     
     def get_examples(self) -> list:
-        """获取示例值列表"""
-        if self.examples:
-            try:
-                return json.loads(self.examples)
-            except json.JSONDecodeError:
-                return []
-        return []
-    
-    def set_examples(self, examples: list):
-        """设置示例值列表"""
-        self.examples = json.dumps(examples, ensure_ascii=False)
+        """从验证规则中获取示例值"""
+        rules = self.get_validation_rules()
+        return rules.get('examples', [])
     
     def validate_value(self, value):
         """验证槽位值"""
@@ -157,14 +151,16 @@ class SlotValue(CommonModel):
     
     conversation_id = BigIntegerField(verbose_name="会话ID")
     slot = ForeignKeyField(Slot, backref='values', on_delete='CASCADE', verbose_name="关联槽位")
-    value = TextField(verbose_name="槽位值")
+    slot_name = CharField(max_length=100, verbose_name="槽位名称")
     original_text = TextField(null=True, verbose_name="原始文本")
-    confidence = DecimalField(max_digits=5, decimal_places=4, default=1.0, verbose_name="置信度")
-    extraction_method = CharField(max_length=50, default='llm', verbose_name="提取方法")  # llm, rule, duckling, manual
-    normalized_value = TextField(null=True, verbose_name="标准化值")
-    is_validated = BooleanField(default=True, verbose_name="是否已验证")
+    extracted_value = TextField(null=True, verbose_name="提取的值")
+    normalized_value = TextField(null=True, verbose_name="标准化后的值")
+    confidence = DecimalField(max_digits=5, decimal_places=4, null=True, verbose_name="提取置信度")
+    extraction_method = CharField(max_length=50, null=True, verbose_name="提取方法")
+    validation_status = CharField(max_length=20, default='pending', verbose_name="验证状态",
+                                 constraints=[Check("validation_status IN ('valid', 'invalid', 'pending', 'corrected')")])
     validation_error = TextField(null=True, verbose_name="验证错误信息")
-    source_turn = IntegerField(null=True, verbose_name="来源轮次")
+    is_confirmed = BooleanField(default=False, verbose_name="是否已确认")
     
     class Meta:
         table_name = 'slot_values'
@@ -311,30 +307,29 @@ class SlotDependency(CommonModel):
     
     dependent_slot = ForeignKeyField(Slot, backref='dependencies', on_delete='CASCADE', verbose_name="依赖槽位")
     required_slot = ForeignKeyField(Slot, backref='dependents', on_delete='CASCADE', verbose_name="被依赖槽位")
-    dependency_type = CharField(max_length=50, default='required', verbose_name="依赖类型")  # required, conditional, mutex
-    dependency_condition = TextField(null=True, verbose_name="依赖条件JSON")
-    priority = IntegerField(default=0, verbose_name="优先级")
+    dependency_type = CharField(max_length=50, default='required', verbose_name="依赖类型",
+                               constraints=[Check("dependency_type IN ('required', 'conditional', 'exclusive', 'related')")])
+    dependency_condition = JSONField(null=True, verbose_name="依赖条件")
+    dependency_level = IntegerField(default=1, verbose_name="依赖层级")
+    is_active = BooleanField(default=True, verbose_name="是否激活")
     
     class Meta:
         table_name = 'slot_dependencies'
         indexes = (
             (('dependent_slot', 'required_slot'), True),  # 联合唯一索引
             (('dependency_type',), False),
-            (('priority',), False),
+            (('dependency_level',), False),
         )
     
     def get_condition(self) -> dict:
         """获取依赖条件"""
         if self.dependency_condition:
-            try:
-                return json.loads(self.dependency_condition)
-            except json.JSONDecodeError:
-                return {}
+            return self.dependency_condition if isinstance(self.dependency_condition, dict) else {}
         return {}
     
     def set_condition(self, condition: dict):
         """设置依赖条件"""
-        self.dependency_condition = json.dumps(condition, ensure_ascii=False)
+        self.dependency_condition = condition
     
     def check_dependency(self, slot_values: dict):
         """
@@ -397,7 +392,7 @@ class SlotDependency(CommonModel):
     @classmethod
     def get_dependencies_for_slot(cls, slot_id: int):
         """获取指定槽位的所有依赖关系"""
-        return cls.select().where(cls.dependent_slot == slot_id).order_by(cls.priority)
+        return cls.select().where(cls.dependent_slot == slot_id).order_by(cls.dependency_level)
     
     @classmethod
     def check_all_dependencies(cls, intent_id: int, slot_values: dict):
@@ -414,7 +409,7 @@ class SlotDependency(CommonModel):
         # 获取该意图下所有的依赖关系
         dependencies = cls.select().join(Slot, on=(cls.dependent_slot == Slot.id)).where(
             Slot.intent == intent_id
-        ).order_by(cls.priority)
+        ).order_by(cls.dependency_level)
         
         errors = []
         for dependency in dependencies:

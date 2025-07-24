@@ -2,6 +2,7 @@
 意图相关数据模型
 """
 from peewee import *
+from playhouse.mysql_ext import JSONField
 from .base import CommonModel, AuditableModel
 import json
 
@@ -12,10 +13,13 @@ class Intent(CommonModel):
     intent_name = CharField(max_length=100, unique=True, verbose_name="意图名称")
     display_name = CharField(max_length=200, verbose_name="显示名称")
     description = TextField(null=True, verbose_name="意图描述")
-    confidence_threshold = DecimalField(max_digits=3, decimal_places=2, default=0.7, verbose_name="置信度阈值")
+    confidence_threshold = DecimalField(max_digits=5, decimal_places=4, default=0.7000, verbose_name="置信度阈值")
     priority = IntegerField(default=1, verbose_name="意图优先级")
+    category = CharField(max_length=50, null=True, verbose_name="意图分类")
     is_active = BooleanField(default=True, verbose_name="是否激活")
-    examples = TextField(null=True, verbose_name="示例语句JSON")
+    examples = JSONField(null=True, verbose_name="示例语句")
+    fallback_response = TextField(null=True, verbose_name="兜底回复")
+    created_by = CharField(max_length=100, null=True, verbose_name="创建人")
     
     class Meta:
         table_name = 'intents'
@@ -26,18 +30,13 @@ class Intent(CommonModel):
     
     def get_examples(self) -> list:
         """获取示例语句列表"""
-        # 将JSON字符串转换为Python列表
         if self.examples:
-            try:
-                return json.loads(self.examples)
-            except json.JSONDecodeError:
-                return []
+            return self.examples if isinstance(self.examples, list) else []
         return []
     
     def set_examples(self, examples: list):
         """设置示例语句列表"""
-        # 将Python列表转换为JSON字符串存储
-        self.examples = json.dumps(examples, ensure_ascii=False)
+        self.examples = examples
     
     def is_high_priority(self) -> bool:
         """判断是否为高优先级意图"""

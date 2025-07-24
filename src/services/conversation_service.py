@@ -6,8 +6,16 @@ import json
 from datetime import datetime, timedelta
 
 from src.models.conversation import Session, Conversation, IntentAmbiguity, IntentTransfer
+from src.utils.context_mapper import (
+    ContextMapper, 
+    map_chat_context_to_session,
+    build_session_cache_data
+)
+from src.schemas.chat import ChatContext
+from src.services.user_preference_service import get_user_preference_service
 from src.services.cache_service import CacheService
 from src.services.ragflow_service import RagflowService
+from src.services.slot_value_service import SlotValueService, get_slot_value_service
 from src.core.fallback_manager import (
     FallbackManager, FallbackType, FallbackContext, FallbackResult, get_fallback_manager
 )
@@ -15,6 +23,7 @@ from src.core.intelligent_fallback_decision import (
     IntelligentFallbackDecisionEngine, DecisionContext, get_decision_engine
 )
 from src.utils.logger import get_logger
+from src.schemas.chat import ChatContext
 
 logger = get_logger(__name__)
 
@@ -27,23 +36,30 @@ class ConversationService:
         self.cache_namespace = "conversation"
         self.ragflow_service = ragflow_service
         
+        # V2.2重构: 集成槽位值服务
+        self.slot_value_service = get_slot_value_service()
+        
+        # B2B架构: 用户偏好服务
+        self.user_preference_service = get_user_preference_service()
+        
         # TASK-032: 回退管理器和智能决策引擎
         self.fallback_manager = get_fallback_manager(cache_service)
         self.decision_engine = get_decision_engine(cache_service)
     
-    async def get_or_create_session(self, user_id: str, session_id: Optional[str] = None) -> Session:
+    async def get_or_create_session(self, user_id: str, session_id: Optional[str] = None, context: Optional[ChatContext] = None) -> Dict[str, Any]:
         """获取或创建会话
         
         Args:
             user_id: 用户ID
             session_id: 会话ID，如果为None则创建新会话
+            context: 请求中的上下文信息，用于初始化新会话
             
         Returns:
-            Session: 会话对象
+            Dict: 会话上下文字典
         """
         if session_id:
             # 尝试从缓存获取会话
-            cache_key = f"session:{session_id}"
+            cache_key = self.cache_service.get_cache_key('session_basic', session_id=session_id)
             cached_session = await self.cache_service.get(cache_key, namespace=self.cache_namespace)
             
             if cached_session:
@@ -51,7 +67,21 @@ class ConversationService:
                 # 将缓存数据转换为Session对象
                 try:
                     session = Session.get_by_id(cached_session['id'])
-                    return session
+                    # V2.2重构: 从slot_values表获取槽位信息
+                    current_slots = {}
+                    try:
+                        current_slots = await self.slot_value_service.get_session_slot_values(session.session_id)
+                    except Exception as e:
+                        logger.warning(f"获取会话槽位值失败: {str(e)}")
+                    
+                    return {
+                        'session_id': session.session_id,
+                        'user_id': session.user_id.user_id if hasattr(session.user_id, 'user_id') else session.user_id,  # v2.2修复: 确保返回字符串
+                        'context': session.get_context(),
+                        'current_intent': session.get_context().get('current_intent'),
+                        'current_slots': current_slots,
+                        'conversation_history': session.get_context().get('conversation_history', [])
+                    }
                 except Session.DoesNotExist:
                     pass
             
@@ -59,22 +89,70 @@ class ConversationService:
             try:
                 session = Session.get(
                     Session.session_id == session_id,
-                    Session.user_id == user_id,
-                    Session.is_active == True
+                    Session.user_id == user_id
                 )
+                
+                # 检查会话是否仍然有效
+                if not session.is_active():
+                    logger.info(f"会话已过期或无效: {session_id}，创建新会话")
+                    # 会话过期，跳转到创建新会话逻辑
+                    raise Session.DoesNotExist()
                 
                 # 缓存会话信息
                 session_data = {
                     'id': session.id,
                     'session_id': session.session_id,
-                    'user_id': session.user_id,
+                    'user_id': session.user_id.user_id if hasattr(session.user_id, 'user_id') else session.user_id,  # v2.2修复: 确保返回字符串
                     'context': session.get_context(),
                     'created_at': session.created_at.isoformat()
                 }
                 await self.cache_service.set(cache_key, session_data, 
                                            ttl=3600, namespace=self.cache_namespace)
                 
-                return session
+                # V2.2重构: 从slot_values表获取槽位信息
+                current_slots = {}
+                try:
+                    current_slots = await self.slot_value_service.get_session_slot_values(session.session_id)
+                except Exception as e:
+                    logger.warning(f"获取会话槽位值失败: {str(e)}")
+                
+                return {
+                    'session_id': session.session_id,
+                    'user_id': session.user_id.user_id if hasattr(session.user_id, 'user_id') else session.user_id,  # v2.2修复: 确保返回字符串
+                    'context': session.get_context(),
+                    'current_intent': session.get_context().get('current_intent'),
+                    'current_slots': current_slots,
+                    'conversation_history': session.get_context().get('conversation_history', [])
+                }
+            except Session.DoesNotExist:
+                pass
+        
+        # 如果没有提供session_id，尝试查找用户的最近活跃会话
+        if not session_id:
+            try:
+                # 查找用户最近的活跃会话
+                recent_session = Session.select().where(
+                    Session.user_id == user_id,
+                    Session.session_state == 'active'
+                ).order_by(Session.updated_at.desc()).first()
+                
+                if recent_session and recent_session.is_active():
+                    logger.info(f"找到用户最近活跃会话: {recent_session.session_id}")
+                    # 返回现有会话
+                    current_slots = {}
+                    try:
+                        current_slots = await self.slot_value_service.get_session_slot_values(recent_session.session_id)
+                    except Exception as e:
+                        logger.warning(f"获取会话槽位值失败: {str(e)}")
+                    
+                    return {
+                        'session_id': recent_session.session_id,
+                        'user_id': recent_session.user_id.user_id if hasattr(recent_session.user_id, 'user_id') else recent_session.user_id,
+                        'context': recent_session.get_context(),
+                        'current_intent': recent_session.get_context().get('current_intent'),
+                        'current_slots': current_slots,
+                        'conversation_history': recent_session.get_context().get('conversation_history', [])
+                    }
             except Session.DoesNotExist:
                 pass
         
@@ -82,27 +160,69 @@ class ConversationService:
         import uuid
         new_session_id = session_id or f"sess_{uuid.uuid4().hex[:12]}"
         
+        # 使用统一的Context映射函数初始化会话上下文
+        initial_context = map_chat_context_to_session(
+            chat_context=context if isinstance(context, ChatContext) else None,
+            session_id=new_session_id,
+            user_id=user_id
+        )
+        
+        # 确保用户存在
+        from src.models.conversation import User
+        try:
+            user = User.get(User.user_id == user_id)
+        except User.DoesNotExist:
+            user = User.create(
+                user_id=user_id,
+                user_type='individual',
+                is_active=True
+            )
+            logger.info(f"创建新用户: {user_id}")
+        
         session = Session.create(
             session_id=new_session_id,
             user_id=user_id,
-            context=json.dumps({}),
+            context=json.dumps(initial_context),
             status='active'
         )
         
-        # 缓存新会话
-        cache_key = f"session:{new_session_id}"
-        session_data = {
-            'id': session.id,
-            'session_id': session.session_id,
-            'user_id': session.user_id,
-            'context': {},
-            'created_at': session.created_at.isoformat()
-        }
+        # 缓存新会话 - 使用标准化数据结构
+        cache_key = self.cache_service.get_cache_key('session_basic', session_id=new_session_id)
+        session_data = build_session_cache_data(
+            session_id=session.session_id,
+            user_id=session.user_id.user_id if hasattr(session.user_id, 'user_id') else session.user_id,  # v2.2修复: 确保传递字符串
+            database_id=session.id,
+            context=initial_context,
+            created_at=session.created_at
+        ).model_dump()
+        
         await self.cache_service.set(cache_key, session_data, 
                                    ttl=3600, namespace=self.cache_namespace)
         
         logger.info(f"创建新会话: {new_session_id} for user: {user_id}")
-        return session
+        
+        # B2B架构: 加载系统配置的用户偏好
+        await self._load_and_merge_user_preferences(user_id, initial_context)
+        
+        # V2.2重构: 初始化槽位值（如果提供了初始槽位）
+        initial_slots = initial_context.get('current_slots', {})
+        if initial_slots and isinstance(initial_slots, dict):
+            try:
+                await self.slot_value_service.initialize_session_slots(
+                    session.session_id, initial_slots
+                )
+                logger.debug(f"初始化会话槽位: {len(initial_slots)} 个")
+            except Exception as e:
+                logger.warning(f"初始化会话槽位失败: {str(e)}")
+        
+        return {
+            'session_id': session.session_id,
+            'user_id': session.user_id.user_id if hasattr(session.user_id, 'user_id') else session.user_id,  # v2.2修复: 确保返回字符串
+            'context': initial_context,
+            'current_intent': initial_context.get('current_intent'),
+            'current_slots': initial_slots,
+            'conversation_history': initial_context.get('conversation_history', [])
+        }
     
     async def save_conversation(self, session_id: str, user_input: str, intent: Optional[str],
                               slots: Dict[str, Any], response: Dict[str, Any],
@@ -127,23 +247,33 @@ class ConversationService:
             logger.error(f"会话不存在: {session_id}")
             raise ValueError(f"会话不存在: {session_id}")
         
-        # 创建对话记录
+        # V2.2重构: 创建对话记录，不再直接保存slots到JSON字段
         conversation = Conversation.create(
             session=session,
             user_input=user_input,
-            intent=intent,
-            slots=json.dumps(slots, ensure_ascii=False),
-            confidence=confidence,
-            response=json.dumps(response, ensure_ascii=False),
-            response_type=response.get('type', 'text')
+            intent_name=intent,
+            confidence_score=confidence,
+            system_response=json.dumps(response, ensure_ascii=False),
+            response_type=response.get('type', 'text'),
+            status='completed'
         )
+        
+        # V2.2重构: 如果有槽位信息，保存到slot_values表
+        if slots and isinstance(slots, dict):
+            try:
+                await self.slot_value_service.save_conversation_slots(
+                    session.session_id, conversation.id, intent, slots
+                )
+                logger.debug(f"保存对话槽位: {len(slots)} 个")
+            except Exception as e:
+                logger.warning(f"保存对话槽位失败: {str(e)}")
         
         # 更新会话的最后活动时间
         session.updated_at = datetime.now()
         session.save()
         
         # 更新缓存中的会话信息
-        cache_key = f"session:{session_id}"
+        cache_key = self.cache_service.get_cache_key('session_basic', session_id=session_id)
         await self.cache_service.delete(cache_key, namespace=self.cache_namespace)
         
         logger.info(f"保存对话记录: session={session_id}, intent={intent}")
@@ -160,7 +290,7 @@ class ConversationService:
             List[Dict]: 对话历史列表
         """
         # 尝试从缓存获取
-        cache_key = f"history:{session_id}:{limit}"
+        cache_key = self.cache_service.get_cache_key('conversation_history', session_id=session_id, limit=limit)
         cached_history = await self.cache_service.get(cache_key, namespace=self.cache_namespace)
         
         if cached_history:
@@ -178,13 +308,26 @@ class ConversationService:
             
             history = []
             for conv in conversations:
+                # V2.2重构: 从slot_values表获取槽位信息
+                slots = {}
+                try:
+                    slots = await self.slot_value_service.get_conversation_slots(conv.id)
+                except Exception as e:
+                    logger.warning(f"获取对话槽位失败: conversation_id={conv.id}, error={str(e)}")
+                
+                # 解析系统响应
+                try:
+                    response = json.loads(conv.system_response) if conv.system_response else {}
+                except (json.JSONDecodeError, AttributeError):
+                    response = conv.system_response or ""
+                
                 history.append({
                     'id': conv.id,
                     'user_input': conv.user_input,
-                    'intent': conv.intent,
-                    'slots': conv.get_slots(),
-                    'response': conv.get_response(),
-                    'confidence': float(conv.confidence),
+                    'intent': conv.intent_name,
+                    'slots': slots,
+                    'response': response,
+                    'confidence': float(conv.confidence_score) if conv.confidence_score else 0.0,
                     'created_at': conv.created_at.isoformat()
                 })
             
@@ -221,7 +364,7 @@ class ConversationService:
             session.save()
             
             # 更新缓存
-            cache_key = f"session:{session_id}"
+            cache_key = self.cache_service.get_cache_key('session_basic', session_id=session_id)
             await self.cache_service.delete(cache_key, namespace=self.cache_namespace)
             
             logger.info(f"更新会话上下文: {session_id}")
@@ -393,7 +536,7 @@ class ConversationService:
         Returns:
             Dict: 统计信息
         """
-        cache_key = f"stats:session:{user_id or 'all'}"
+        cache_key = self.cache_service.get_cache_key('stats_session', user_id=user_id or 'all')
         cached_stats = await self.cache_service.get(cache_key, namespace=self.cache_namespace)
         
         if cached_stats:
@@ -649,3 +792,49 @@ class ConversationService:
                 'fallback_used': True,
                 'fallback_strategy': 'emergency_fallback'
             }
+    
+    async def _load_and_merge_user_preferences(self, user_id: str, context: Dict[str, Any]) -> None:
+        """
+        加载系统配置的用户偏好并合并到会话上下文中 (B2B架构)
+        
+        Args:
+            user_id: 用户ID
+            context: 会话上下文（会被修改）
+        """
+        try:
+            # 从数据库/缓存获取用户偏好
+            user_preferences = await self.user_preference_service.get_user_preferences(user_id)
+            
+            # 合并到上下文中
+            context['user_preferences'] = user_preferences
+            
+            # 如果有临时偏好覆盖，进行合并
+            temp_preferences = context.get('temp_preferences', {})
+            if temp_preferences:
+                # 临时偏好覆盖系统配置
+                merged_preferences = {**user_preferences, **temp_preferences}
+                context['user_preferences'] = merged_preferences
+                logger.debug(f"临时偏好覆盖生效: {user_id}, 覆盖项: {list(temp_preferences.keys())}")
+            
+            logger.debug(f"用户偏好加载完成: {user_id}, 偏好项: {len(user_preferences)}")
+            
+        except Exception as e:
+            logger.error(f"加载用户偏好失败: {user_id}, 错误: {str(e)}")
+            # 失败时使用空的偏好字典
+            context['user_preferences'] = {}
+    
+    async def get_current_slot_values(self, session_id: str) -> Dict[str, Any]:
+        """
+        获取当前会话的槽位值
+        
+        Args:
+            session_id: 会话ID
+            
+        Returns:
+            Dict: 当前槽位值字典
+        """
+        try:
+            return await self.slot_value_service.get_session_slot_values(session_id)
+        except Exception as e:
+            logger.error(f"获取当前槽位值失败: {session_id}, 错误: {str(e)}")
+            return {}

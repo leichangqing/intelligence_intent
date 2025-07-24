@@ -12,30 +12,10 @@ from src.config.settings import settings
 from src.models.intent import Intent
 from src.models.slot import Slot
 from src.utils.logger import get_logger
+from src.schemas.intent_recognition import IntentRecognitionResult
 from src.core.confidence_manager import ConfidenceManager, ConfidenceSource, ConfidenceScore
 
 logger = get_logger(__name__)
-
-
-class IntentRecognitionResult:
-    """意图识别结果类"""
-    
-    def __init__(self, intent: str, confidence: float, entities: List[Dict] = None,
-                 alternatives: List[Dict] = None, reasoning: str = None):
-        self.intent = intent
-        self.confidence = confidence
-        self.entities = entities or []
-        self.alternatives = alternatives or []
-        self.reasoning = reasoning
-    
-    def to_dict(self) -> Dict:
-        return {
-            'intent': self.intent,
-            'confidence': self.confidence,
-            'entities': self.entities,
-            'alternatives': self.alternatives,
-            'reasoning': self.reasoning
-        }
 
 
 class CustomLLM:
@@ -272,7 +252,12 @@ class NLUEngine:
             
         except Exception as e:
             logger.error(f"意图识别失败: {str(e)}")
-            return IntentRecognitionResult("unknown", 0.0, reasoning=f"识别失败: {str(e)}")
+            return IntentRecognitionResult.from_nlu_result(
+                intent_name="unknown", 
+                confidence=0.0, 
+                reasoning=f"识别失败: {str(e)}",
+                user_input=user_input
+            )
     
     async def _build_intent_prompt(self, user_input: str, active_intents: List = None, 
                                   context: Optional[Dict] = None) -> str:
@@ -361,19 +346,30 @@ class NLUEngine:
                 confidence = 0.0
                 reasoning += " (意图不在预定义列表中)"
             
-            return IntentRecognitionResult(
-                intent=intent,
+            return IntentRecognitionResult.from_nlu_result(
+                intent_name=intent,
                 confidence=confidence,
                 alternatives=alternatives,
-                reasoning=reasoning
+                reasoning=reasoning,
+                user_input=user_input
             )
             
         except json.JSONDecodeError as e:
             logger.error(f"LLM响应JSON解析失败: {e}, 响应: {llm_response}")
-            return IntentRecognitionResult("unknown", 0.0, reasoning="LLM响应格式错误")
+            return IntentRecognitionResult.from_nlu_result(
+                intent_name="unknown", 
+                confidence=0.0, 
+                reasoning="LLM响应格式错误",
+                user_input=user_input
+            )
         except Exception as e:
             logger.error(f"解析LLM响应失败: {str(e)}")
-            return IntentRecognitionResult("unknown", 0.0, reasoning=f"解析失败: {str(e)}")
+            return IntentRecognitionResult.from_nlu_result(
+                intent_name="unknown", 
+                confidence=0.0, 
+                reasoning=f"解析失败: {str(e)}",
+                user_input=user_input
+            )
     
     def _calculate_context_confidence(self, intent_name: str, context: Dict) -> float:
         """
@@ -480,17 +476,28 @@ class NLUEngine:
             
             # 设置阈值
             if best_score < 0.3:
-                return IntentRecognitionResult("unknown", best_score, reasoning="未找到匹配的意图")
+                return IntentRecognitionResult.from_nlu_result(
+                    intent_name="unknown", 
+                    confidence=best_score, 
+                    reasoning="未找到匹配的意图",
+                    user_input=user_input
+                )
             
-            return IntentRecognitionResult(
-                best_match, 
-                min(best_score, 0.95),  # 规则匹配最高置信度限制为0.95
-                reasoning=f"基于关键词匹配，得分: {best_score:.3f}"
+            return IntentRecognitionResult.from_nlu_result(
+                intent_name=best_match, 
+                confidence=min(best_score, 0.95),  # 规则匹配最高置信度限制为0.95
+                reasoning=f"基于关键词匹配，得分: {best_score:.3f}",
+                user_input=user_input
             )
             
         except Exception as e:
             logger.error(f"规则匹配失败: {str(e)}")
-            return IntentRecognitionResult("unknown", 0.0, reasoning=f"规则匹配失败: {str(e)}")
+            return IntentRecognitionResult.from_nlu_result(
+                intent_name="unknown", 
+                confidence=0.0, 
+                reasoning=f"规则匹配失败: {str(e)}",
+                user_input=user_input
+            )
     
     async def extract_entities(self, text: str, entity_types: List[str] = None,
                              use_duckling: bool = True, use_llm: bool = True) -> List[Dict[str, Any]]:

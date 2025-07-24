@@ -2,48 +2,85 @@
 对话相关数据模型
 """
 from peewee import *
+from playhouse.mysql_ext import JSONField
 from .base import CommonModel
-import json
 from datetime import datetime, timedelta
 
 
+class User(CommonModel):
+    """用户表 - 与MySQL Schema对应"""
+    user_id = CharField(max_length=100, unique=True, verbose_name="用户ID")
+    user_type = CharField(max_length=20, default='individual', verbose_name="用户类型", 
+                         constraints=[Check("user_type IN ('individual', 'enterprise', 'admin', 'system')")])
+    username = CharField(max_length=100, null=True, verbose_name="用户名")
+    email = CharField(max_length=255, null=True, verbose_name="邮箱")
+    phone = CharField(max_length=20, null=True, verbose_name="电话")
+    display_name = CharField(max_length=200, null=True, verbose_name="显示名称")
+    avatar_url = CharField(max_length=500, null=True, verbose_name="头像URL")
+    status = CharField(max_length=20, default='active', verbose_name="状态",
+                      constraints=[Check("status IN ('active', 'inactive', 'suspended', 'deleted')")])
+    preferences = JSONField(null=True, verbose_name="用户偏好设置")
+    metadata = JSONField(null=True, verbose_name="用户元数据")
+    last_login_at = DateTimeField(null=True, verbose_name="最后登录时间")
+    
+    class Meta:
+        table_name = 'users'
+        indexes = (
+            (('username',), False),
+            (('email',), False),
+            (('user_type',), False),
+            (('status',), False),
+        )
+
+
 class Session(CommonModel):
-    """会话记录表"""
+    """会话记录表 - 与MySQL Schema对应"""
     
     session_id = CharField(max_length=100, unique=True, verbose_name="会话ID")
-    user_id = CharField(max_length=100, verbose_name="用户ID")
-    current_intent = CharField(max_length=100, null=True, verbose_name="当前意图")
-    session_state = CharField(max_length=20, default='active', verbose_name="会话状态")  # active, completed, expired
-    context = TextField(null=True, verbose_name="会话上下文JSON")
+    user_id = ForeignKeyField(User, field='user_id', on_delete='CASCADE', verbose_name="用户ID")
+    current_intent_id = IntegerField(null=True, verbose_name="当前意图ID")
+    current_intent_name = CharField(max_length=100, null=True, verbose_name="当前意图名称")
+    session_state = CharField(max_length=20, default='active', verbose_name="会话状态")  # active, paused, completed, expired, error
+    context = JSONField(null=True, verbose_name="会话上下文")
+    metadata = JSONField(null=True, verbose_name="元数据")
+    channel = CharField(max_length=50, null=True, verbose_name="渠道来源")
     expires_at = DateTimeField(null=True, verbose_name="过期时间")
     
     class Meta:
         table_name = 'sessions'
         indexes = (
             (('session_id',), False),
-            (('user_id',), False),
-            (('session_state',), False),
+            (('user_id', 'session_state'), False),
             (('expires_at',), False),
+            (('channel',), False),
+            (('session_state', 'updated_at'), False),
         )
     
     def get_context(self) -> dict:
         """获取会话上下文"""
         if self.context:
-            try:
-                return json.loads(self.context)
-            except json.JSONDecodeError:
-                return {}
+            return self.context if isinstance(self.context, dict) else {}
         return {}
     
     def set_context(self, context: dict):
         """设置会话上下文"""
-        self.context = json.dumps(context, ensure_ascii=False)
+        self.context = context
     
     def update_context(self, key: str, value: any):
         """更新上下文中的特定键值"""
         ctx = self.get_context()
         ctx[key] = value
         self.set_context(ctx)
+    
+    def get_metadata(self) -> dict:
+        """获取元数据"""
+        if self.metadata:
+            return self.metadata if isinstance(self.metadata, dict) else {}
+        return {}
+    
+    def set_metadata(self, metadata: dict):
+        """设置元数据"""
+        self.metadata = metadata
     
     def is_expired(self) -> bool:
         """检查会话是否过期"""
@@ -68,58 +105,78 @@ class Session(CommonModel):
         self.session_state = 'expired'
     
     def __str__(self):
-        return f"Session({self.session_id}: {self.user_id})"
+        return f"Session({self.session_id}: {self.user_id.user_id if hasattr(self.user_id, 'user_id') else self.user_id})"
 
 
 class Conversation(CommonModel):
-    """对话历史表"""
+    """对话历史表 - 与MySQL Schema对应"""
     
-    session_id = CharField(max_length=100, verbose_name="会话ID")
-    user_id = CharField(max_length=100, verbose_name="用户ID")
+    id = BigAutoField(primary_key=True)  # 显式定义BIGINT主键
+    session = ForeignKeyField(Session, field='session_id', column_name='session_id', on_delete='CASCADE', verbose_name="会话ID")
+    user_id = ForeignKeyField(User, field='user_id', on_delete='CASCADE', verbose_name="用户ID")
+    conversation_turn = IntegerField(verbose_name="对话轮次")
     user_input = TextField(verbose_name="用户输入")
-    intent_recognized = CharField(max_length=100, null=True, verbose_name="识别的意图")
+    user_input_type = CharField(max_length=20, default='text', verbose_name="输入类型")  # text, voice, image, file
+    intent_id = IntegerField(null=True, verbose_name="识别的意图ID")
+    intent_name = CharField(max_length=100, null=True, verbose_name="识别的意图名称")
     confidence_score = DecimalField(max_digits=5, decimal_places=4, null=True, verbose_name="置信度分数")
-    slots_filled = TextField(null=True, verbose_name="已填充的槽位JSON")
+    # v2.2改进: 移除了slots_filled和slots_missing字段。这些信息应通过查询slot_values表动态获取。
     system_response = TextField(null=True, verbose_name="系统响应")
     response_type = CharField(max_length=50, null=True, verbose_name="响应类型")
-    status = CharField(max_length=30, null=True, verbose_name="处理状态")
+    response_metadata = JSONField(null=True, verbose_name="响应元数据")
+    status = CharField(max_length=30, default='processing', verbose_name="处理状态")  # processing, completed, failed, pending_user, ambiguous
     processing_time_ms = IntegerField(null=True, verbose_name="处理时间毫秒")
+    error_message = TextField(null=True, verbose_name="错误信息")
     
     class Meta:
         table_name = 'conversations'
         indexes = (
-            (('session_id', 'created_at'), False),
-            (('user_id',), False),
-            (('intent_recognized',), False),
+            (('session', 'conversation_turn'), True),  # 会话内对话轮次唯一
+            (('user_id', 'created_at'), False),
+            (('intent_id', 'confidence_score'), False),
+            (('status', 'created_at'), False),
             (('response_type',), False),
-            (('status',), False),
         )
     
     def get_slots_filled(self) -> dict:
-        """获取已填充的槽位"""
-        if self.slots_filled:
-            try:
-                return json.loads(self.slots_filled)
-            except json.JSONDecodeError:
-                return {}
+        """
+        v2.2改进: 从 slot_values 表动态获取已填充的槽位
+        此方法现在需要查询相关的 slot_values 记录
+        """
+        # TODO: 实现从slot_values表查询已填充槽位
+        from src.services.slot_value_service import get_slot_value_service
+        try:
+            slot_value_service = get_slot_value_service()
+            return slot_value_service.get_conversation_filled_slots(self.id)
+        except Exception:
+            return {}
+    
+    def get_slots_missing(self) -> list:
+        """
+        v2.2改进: 从 slot_values 表动态获取缺失的槽位
+        此方法现在需要基于意图定义和已填充槽位计算
+        """
+        # TODO: 实现基于意图定义和已填充槽位计算缺失槽位
+        from src.services.slot_value_service import get_slot_value_service
+        try:
+            slot_value_service = get_slot_value_service()
+            return slot_value_service.get_conversation_missing_slots(self.id, self.intent_name)
+        except Exception:
+            return []
+    
+    def get_response_metadata(self) -> dict:
+        """获取响应元数据"""
+        if self.response_metadata:
+            return self.response_metadata if isinstance(self.response_metadata, dict) else {}
         return {}
     
-    def set_slots_filled(self, slots: dict):
-        """设置已填充的槽位"""
-        self.slots_filled = json.dumps(slots, ensure_ascii=False)
+    def set_response_metadata(self, metadata: dict):
+        """设置响应元数据"""
+        self.response_metadata = metadata
     
     def get_context_snapshot(self) -> dict:
-        """获取上下文快照"""
-        if self.context_snapshot:
-            try:
-                return json.loads(self.context_snapshot)
-            except json.JSONDecodeError:
-                return {}
+        """获取上下文快照 - 暂时未实现"""
         return {}
-    
-    def set_context_snapshot(self, context: dict):
-        """设置上下文快照"""
-        self.context_snapshot = json.dumps(context, ensure_ascii=False)
     
     def is_successful(self) -> bool:
         """判断是否处理成功"""
@@ -143,116 +200,116 @@ class Conversation(CommonModel):
         return self.processing_time_ms and self.processing_time_ms < threshold_ms
     
     def __str__(self):
-        return f"Conversation({self.session_id}: {self.user_input[:50]}...)"
+        return f"Conversation({self.session.session_id}: {self.user_input[:50]}...)"
 
 
 class IntentAmbiguity(CommonModel):
-    """意图歧义处理表"""
+    """意图歧义处理表 - 与MySQL Schema对应"""
     
-    conversation = ForeignKeyField(Conversation, backref='ambiguities', on_delete='CASCADE', verbose_name="对话记录")
-    candidate_intents = TextField(verbose_name="候选意图列表JSON")
-    disambiguation_question = TextField(verbose_name="歧义消除问题")
-    disambiguation_options = TextField(null=True, verbose_name="选择选项JSON")
-    user_choice = CharField(max_length=100, null=True, verbose_name="用户选择的意图")
-    resolution_method = CharField(max_length=50, null=True, verbose_name="解决方法")  # user_choice, system_auto, context_based
+    conversation = ForeignKeyField(Conversation, on_delete='CASCADE', verbose_name="对话记录")
+    user_input = TextField(verbose_name="用户输入")
+    candidate_intents = JSONField(verbose_name="候选意图列表")
+    disambiguation_question = TextField(null=True, verbose_name="消歧问题")
+    disambiguation_options = JSONField(null=True, verbose_name="消歧选项")
+    user_choice = IntegerField(null=True, verbose_name="用户选择")
+    resolution_method = CharField(max_length=20, null=True, verbose_name="解决方法")  # user_choice, auto_resolve, fallback, escalate
+    resolved_intent_id = IntegerField(null=True, verbose_name="最终确定的意图ID")
     resolved_at = DateTimeField(null=True, verbose_name="解决时间")
+    resolved = BooleanField(default=False, verbose_name="是否已解决")
     
     class Meta:
         table_name = 'intent_ambiguities'
         indexes = (
             (('conversation',), False),
-            (('resolved_at',), False),
+            (('resolved', 'created_at'), False),
             (('resolution_method',), False),
         )
     
     def get_candidate_intents(self) -> list:
         """获取候选意图列表"""
         if self.candidate_intents:
-            try:
-                return json.loads(self.candidate_intents)
-            except json.JSONDecodeError:
-                return []
+            return self.candidate_intents if isinstance(self.candidate_intents, list) else []
         return []
     
     def set_candidate_intents(self, candidates: list):
         """设置候选意图列表"""
-        self.candidate_intents = json.dumps(candidates, ensure_ascii=False)
+        self.candidate_intents = candidates
     
     def get_disambiguation_options(self) -> list:
         """获取歧义消除选项"""
         if self.disambiguation_options:
-            try:
-                return json.loads(self.disambiguation_options)
-            except json.JSONDecodeError:
-                return []
+            return self.disambiguation_options if isinstance(self.disambiguation_options, list) else []
         return []
     
     def set_disambiguation_options(self, options: list):
         """设置歧义消除选项"""
-        self.disambiguation_options = json.dumps(options, ensure_ascii=False)
+        self.disambiguation_options = options
     
     def is_resolved(self) -> bool:
         """判断歧义是否已解决"""
-        return self.resolved_at is not None
+        return self.resolved
     
     def resolve_with_choice(self, choice: str):
         """通过用户选择解决歧义"""
         self.user_choice = choice
         self.resolution_method = 'user_choice'
         self.resolved_at = datetime.now()
+        self.resolved = True
     
     def resolve_automatically(self, choice: str):
         """自动解决歧义"""
         self.user_choice = choice
-        self.resolution_method = 'system_auto'
+        self.resolution_method = 'auto_resolve'
         self.resolved_at = datetime.now()
+        self.resolved = True
     
     def __str__(self):
         return f"Ambiguity({self.conversation.id}: {len(self.get_candidate_intents())} candidates)"
 
 
 class IntentTransfer(CommonModel):
-    """意图转移记录表"""
+    """意图转移记录表 - 与MySQL Schema对应"""
     
-    session_id = CharField(max_length=100, verbose_name="会话ID")
-    user_id = CharField(max_length=100, verbose_name="用户ID")
-    from_intent = CharField(max_length=100, null=True, verbose_name="源意图")
-    to_intent = CharField(max_length=100, verbose_name="目标意图")
-    transfer_type = CharField(max_length=50, verbose_name="转移类型")  # interruption, explicit_change, system_suggestion
-    saved_context = TextField(null=True, verbose_name="保存的上下文JSON")
+    session = ForeignKeyField(Session, field='session_id', column_name='session_id', on_delete='CASCADE', verbose_name="会话ID")
+    conversation = ForeignKeyField(Conversation, null=True, on_delete='SET NULL', verbose_name="对话ID")
+    user_id = ForeignKeyField(User, field='user_id', on_delete='CASCADE', verbose_name="用户ID")
+    from_intent_id = IntegerField(null=True, verbose_name="源意图ID")
+    from_intent_name = CharField(max_length=100, null=True, verbose_name="源意图名称")
+    to_intent_id = IntegerField(null=True, verbose_name="目标意图ID")
+    to_intent_name = CharField(max_length=100, null=True, verbose_name="目标意图名称")
+    transfer_type = CharField(max_length=20, verbose_name="转移类型")  # user_request, system_redirect, fallback, escalation, completion
     transfer_reason = TextField(null=True, verbose_name="转移原因")
-    confidence_score = DecimalField(max_digits=5, decimal_places=4, null=True, verbose_name="转移置信度")
+    saved_context = JSONField(null=True, verbose_name="保存的上下文")
+    transfer_confidence = DecimalField(max_digits=5, decimal_places=4, null=True, verbose_name="转移置信度")
+    is_successful = BooleanField(default=True, verbose_name="是否成功")
     resumed_at = DateTimeField(null=True, verbose_name="恢复时间")
     
     class Meta:
         table_name = 'intent_transfers'
         indexes = (
-            (('session_id', 'created_at'), False),
-            (('user_id',), False),
+            (('session', 'created_at'), False),
+            (('user_id', 'transfer_type'), False),
+            (('from_intent_id', 'to_intent_id'), False),
             (('transfer_type',), False),
-            (('from_intent', 'to_intent'), False),
         )
     
     def get_saved_context(self) -> dict:
         """获取保存的上下文"""
         if self.saved_context:
-            try:
-                return json.loads(self.saved_context)
-            except json.JSONDecodeError:
-                return {}
+            return self.saved_context if isinstance(self.saved_context, dict) else {}
         return {}
     
     def set_saved_context(self, context: dict):
         """设置保存的上下文"""
-        self.saved_context = json.dumps(context, ensure_ascii=False)
+        self.saved_context = context
     
     def is_interruption(self) -> bool:
         """判断是否为中断类型转移"""
-        return self.transfer_type == 'interruption'
+        return self.transfer_type == 'user_request'
     
     def is_explicit_change(self) -> bool:
         """判断是否为明确的意图改变"""
-        return self.transfer_type == 'explicit_change'
+        return self.transfer_type == 'system_redirect'
     
     def can_resume(self) -> bool:
         """判断是否可以恢复原意图"""
@@ -264,41 +321,38 @@ class IntentTransfer(CommonModel):
             self.resumed_at = datetime.now()
     
     def __str__(self):
-        return f"Transfer({self.from_intent} -> {self.to_intent})"
+        return f"Transfer({self.from_intent_name} -> {self.to_intent_name})"
 
 
 class UserContext(CommonModel):
-    """用户上下文表"""
+    """用户上下文表 - 与MySQL Schema对应"""
     
-    user_id = CharField(max_length=100, verbose_name="用户ID")
-    context_type = CharField(max_length=50, verbose_name="上下文类型")  # preferences, history, temporary, session
+    user_id = ForeignKeyField(User, field='user_id', on_delete='CASCADE', verbose_name="用户ID")
+    context_type = CharField(max_length=20, verbose_name="上下文类型")  # preference, history, profile, session, temporary
     context_key = CharField(max_length=100, verbose_name="上下文键")
-    context_value = TextField(verbose_name="上下文值JSON")
+    context_value = JSONField(null=True, verbose_name="上下文值")
+    scope = CharField(max_length=20, default='global', verbose_name="作用范围")  # global, session, conversation
+    priority = IntegerField(default=1, verbose_name="优先级")
     expires_at = DateTimeField(null=True, verbose_name="过期时间")
+    is_active = BooleanField(default=True, verbose_name="是否有效")
     
     class Meta:
         table_name = 'user_contexts'
         indexes = (
-            (('user_id', 'context_type', 'context_key'), True),  # 联合唯一索引
             (('user_id', 'context_type'), False),
+            (('context_key',), False),
             (('expires_at',), False),
+            (('scope', 'priority'), False),
+            (('user_id', 'context_type', 'context_key'), True),  # 联合唯一索引
         )
     
     def get_context_value(self) -> any:
         """获取上下文值"""
-        if self.context_value:
-            try:
-                return json.loads(self.context_value)
-            except json.JSONDecodeError:
-                return self.context_value
-        return None
+        return self.context_value
     
     def set_context_value(self, value: any):
         """设置上下文值"""
-        if isinstance(value, (dict, list)):
-            self.context_value = json.dumps(value, ensure_ascii=False)
-        else:
-            self.context_value = str(value)
+        self.context_value = value
     
     def is_expired(self) -> bool:
         """检查是否过期"""

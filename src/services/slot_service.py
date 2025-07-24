@@ -10,6 +10,10 @@ from src.models.slot import Slot, SlotValue, SlotDependency
 from src.models.intent import Intent
 from src.models.conversation import Conversation
 from src.services.cache_service import CacheService
+from src.services.audit_service import AuditService, AuditAction
+from src.services.cache_invalidation_service import CacheInvalidationService, CacheInvalidationType
+from src.services.config_management_service import get_config_management_service
+from src.core.event_system import get_event_system, EventType
 from src.core.nlu_engine import NLUEngine
 from src.core.dependency_graph import dependency_graph_manager, DependencyGraph
 from src.core.slot_inheritance import inheritance_manager, InheritanceResult
@@ -44,9 +48,16 @@ class SlotExtractionResult:
 class SlotService:
     """槽位管理服务类"""
     
-    def __init__(self, cache_service: CacheService, nlu_engine: NLUEngine):
+    def __init__(self, cache_service: CacheService, nlu_engine: NLUEngine,
+                 audit_service: Optional[AuditService] = None,
+                 cache_invalidation_service: Optional[CacheInvalidationService] = None):
         self.cache_service = cache_service
         self.nlu_engine = nlu_engine
+        self.audit_service = audit_service or AuditService()
+        self.cache_invalidation_service = cache_invalidation_service or CacheInvalidationService(cache_service)
+        # V2.2重构: 集成配置管理服务和事件系统
+        self.config_management_service = get_config_management_service()
+        self.event_system = get_event_system()
         self.clarification_generator = ClarificationQuestionGenerator()
     
     async def extract_slots(self, intent: Intent, user_input: str, 
@@ -151,6 +162,23 @@ class SlotService:
         
         # 缓存结果
         await self.cache_service.set(cache_key, slots, ttl=3600)
+        
+        # 记录槽位定义查询审计日志（可选，用于调试）
+        try:
+            await self.audit_service.log_config_change(
+                table_name="slot_definitions",
+                record_id=intent.id,
+                action=AuditAction.INSERT,  # 使用INSERT表示查询操作
+                old_values=None,
+                new_values={
+                    "action": "query_slot_definitions",
+                    "intent_name": intent.intent_name,
+                    "slot_count": len(slots)
+                },
+                operator_id="slot_service"
+            )
+        except Exception as e:
+            logger.warning(f"记录槽位定义查询审计日志失败: {str(e)}")
         
         return slots
     
@@ -634,7 +662,7 @@ class SlotService:
         return True
     
     async def save_slot_values(self, conversation_id: int, intent: Intent, 
-                             slots: Dict[str, Any]):
+                             slots: Dict[str, Any], operator_id: str = "system"):
         """
         保存槽位值到数据库
         
@@ -642,11 +670,15 @@ class SlotService:
             conversation_id: 对话ID
             intent: 意图对象
             slots: 槽位值字典
+            operator_id: 操作者ID
         """
         try:
             # 获取槽位定义
             slot_definitions = await self._get_slot_definitions(intent)
             slot_def_map = {slot.slot_name: slot for slot in slot_definitions}
+            
+            saved_slots = []
+            updated_slots = []
             
             # 保存每个槽位值
             for slot_name, slot_info in slots.items():
@@ -660,6 +692,14 @@ class SlotService:
                         SlotValue.conversation_id == conversation_id,
                         SlotValue.slot == slot_def
                     )
+                    # 记录更新前的值
+                    old_values = {
+                        'value': slot_value.value,
+                        'confidence': float(slot_value.confidence) if slot_value.confidence else None,
+                        'extraction_method': slot_value.extraction_method,
+                        'is_validated': slot_value.is_validated
+                    }
+                    
                     # 更新现有记录
                     slot_value.value = str(slot_info['value'])
                     slot_value.confidence = slot_info.get('confidence')
@@ -667,6 +707,12 @@ class SlotService:
                     slot_value.normalized_value = str(slot_info['value'])
                     slot_value.is_validated = slot_info.get('is_validated', True)
                     slot_value.validation_error = slot_info.get('validation_error')
+                    
+                    updated_slots.append({
+                        'slot_name': slot_name,
+                        'old_values': old_values,
+                        'new_values': slot_info
+                    })
                     
                 except SlotValue.DoesNotExist:
                     # 创建新记录
@@ -681,8 +727,43 @@ class SlotService:
                         is_validated=slot_info.get('is_validated', True),
                         validation_error=slot_info.get('validation_error')
                     )
+                    
+                    saved_slots.append({
+                        'slot_name': slot_name,
+                        'slot_info': slot_info
+                    })
                 
                 slot_value.save()
+            
+            # 记录审计日志
+            try:
+                audit_data = {
+                    'conversation_id': conversation_id,
+                    'intent_name': intent.intent_name,
+                    'saved_slots': saved_slots,
+                    'updated_slots': updated_slots,
+                    'total_slots': len(slots)
+                }
+                
+                await self.audit_service.log_config_change(
+                    table_name="slot_values",
+                    record_id=conversation_id,
+                    action=AuditAction.UPDATE,
+                    old_values=None,
+                    new_values=audit_data,
+                    operator_id=operator_id
+                )
+            except Exception as audit_error:
+                logger.warning(f"记录槽位值保存审计日志失败: {str(audit_error)}")
+            
+            # 失效相关缓存
+            try:
+                await self.cache_invalidation_service.invalidate_slot_caches(
+                    intent.id, [slot['slot_name'] for slot in saved_slots + updated_slots],
+                    CacheInvalidationType.DATA_UPDATE
+                )
+            except Exception as cache_error:
+                logger.warning(f"失效槽位缓存失败: {str(cache_error)}")
             
             logger.info(f"槽位值保存完成: {conversation_id}, {len(slots)}个槽位")
             
@@ -1446,3 +1527,400 @@ class SlotService:
         except Exception as e:
             logger.error(f"槽位值澄清需求检测失败: {str(e)}")
             return False, None, f"检测失败: {str(e)}"
+    
+    async def create_slot(self, intent_id: int, slot_data: Dict[str, Any], 
+                        operator_id: str = "system") -> Optional[Slot]:
+        """
+        创建槽位并记录审计日志
+        
+        Args:
+            intent_id: 意图ID
+            slot_data: 槽位数据
+            operator_id: 操作者ID
+            
+        Returns:
+            Optional[Slot]: 创建的槽位对象
+        """
+        try:
+            # 添加意图ID到槽位数据
+            slot_data['intent_id'] = intent_id
+            
+            # 创建槽位
+            slot = Slot.create(**slot_data)
+            
+            # 记录审计日志
+            await self.audit_service.log_config_change(
+                table_name="slots",
+                record_id=slot.id,
+                action=AuditAction.INSERT,
+                old_values=None,
+                new_values=slot_data,
+                operator_id=operator_id
+            )
+            
+            # 失效相关缓存
+            await self.cache_invalidation_service.invalidate_slot_caches(
+                intent_id, [slot.slot_name], CacheInvalidationType.CONFIG_CHANGE
+            )
+            
+            logger.info(f"槽位创建成功: {slot.slot_name} for intent {intent_id} by {operator_id}")
+            return slot
+            
+        except Exception as e:
+            logger.error(f"创建槽位失败: {str(e)}")
+            return None
+    
+    async def update_slot(self, slot_id: int, updates: Dict[str, Any], 
+                        operator_id: str = "system") -> bool:
+        """
+        更新槽位并记录审计日志
+        
+        Args:
+            slot_id: 槽位ID
+            updates: 更新数据
+            operator_id: 操作者ID
+            
+        Returns:
+            bool: 更新是否成功
+        """
+        try:
+            # 获取原始数据
+            slot = Slot.get_by_id(slot_id)
+            old_values = {
+                'slot_name': slot.slot_name,
+                'display_name': slot.display_name,
+                'description': slot.description,
+                'slot_type': slot.slot_type,
+                'is_required': slot.is_required,
+                'validation_rules': slot.validation_rules,
+                'examples': slot.examples,
+                'sort_order': slot.sort_order,
+                'updated_at': slot.updated_at.isoformat() if slot.updated_at else None
+            }
+            
+            # 执行更新
+            query = Slot.update(**updates).where(Slot.id == slot_id)
+            query.execute()
+            
+            # 获取更新后的数据
+            updated_slot = Slot.get_by_id(slot_id)
+            new_values = {
+                'slot_name': updated_slot.slot_name,
+                'display_name': updated_slot.display_name,
+                'description': updated_slot.description,
+                'slot_type': updated_slot.slot_type,
+                'is_required': updated_slot.is_required,
+                'validation_rules': updated_slot.validation_rules,
+                'examples': updated_slot.examples,
+                'sort_order': updated_slot.sort_order,
+                'updated_at': updated_slot.updated_at.isoformat() if updated_slot.updated_at else None
+            }
+            
+            # 记录审计日志
+            await self.audit_service.log_config_change(
+                table_name="slots",
+                record_id=slot_id,
+                action=AuditAction.UPDATE,
+                old_values=old_values,
+                new_values=new_values,
+                operator_id=operator_id
+            )
+            
+            # 失效相关缓存
+            await self.cache_invalidation_service.invalidate_slot_caches(
+                updated_slot.intent_id, [updated_slot.slot_name], CacheInvalidationType.CONFIG_CHANGE
+            )
+            
+            logger.info(f"槽位更新成功: {slot_id} by {operator_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"更新槽位失败: {str(e)}")
+            return False
+    
+    async def delete_slot(self, slot_id: int, operator_id: str = "system") -> bool:
+        """
+        删除槽位并记录审计日志
+        
+        Args:
+            slot_id: 槽位ID
+            operator_id: 操作者ID
+            
+        Returns:
+            bool: 删除是否成功
+        """
+        try:
+            # 获取要删除的槽位信息
+            slot = Slot.get_by_id(slot_id)
+            old_values = {
+                'slot_name': slot.slot_name,
+                'display_name': slot.display_name,
+                'description': slot.description,
+                'slot_type': slot.slot_type,
+                'is_required': slot.is_required,
+                'validation_rules': slot.validation_rules,
+                'examples': slot.examples,
+                'intent_id': slot.intent_id,
+                'deleted_at': datetime.now().isoformat()
+            }
+            
+            intent_id = slot.intent_id
+            slot_name = slot.slot_name
+            
+            # 执行删除
+            slot.delete_instance()
+            
+            # 记录审计日志
+            await self.audit_service.log_config_change(
+                table_name="slots",
+                record_id=slot_id,
+                action=AuditAction.DELETE,
+                old_values=old_values,
+                new_values=None,
+                operator_id=operator_id
+            )
+            
+            # 失效相关缓存
+            await self.cache_invalidation_service.invalidate_slot_caches(
+                intent_id, [slot_name], CacheInvalidationType.CONFIG_CHANGE
+            )
+            
+            logger.info(f"槽位删除成功: {slot_id} by {operator_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"删除槽位失败: {str(e)}")
+            return False
+    
+    async def bulk_update_slots(self, updates: List[Dict[str, Any]], 
+                              operator_id: str = "system") -> Dict[str, Any]:
+        """
+        批量更新槽位
+        
+        Args:
+            updates: 更新列表，每个元素包含 {'id': int, 'data': dict}
+            operator_id: 操作者ID
+            
+        Returns:
+            Dict[str, Any]: 批量更新结果
+        """
+        try:
+            successful = 0
+            failed = 0
+            errors = []
+            
+            for update in updates:
+                slot_id = update.get('id')
+                update_data = update.get('data', {})
+                
+                if await self.update_slot(slot_id, update_data, operator_id):
+                    successful += 1
+                else:
+                    failed += 1
+                    errors.append(f"Slot {slot_id} update failed")
+            
+            result = {
+                'successful': successful,
+                'failed': failed,
+                'total': len(updates),
+                'errors': errors,
+                'timestamp': datetime.now().isoformat()
+            }
+            
+            # 记录批量操作审计日志
+            await self.audit_service.log_config_change(
+                table_name="slots",
+                record_id=0,
+                action=AuditAction.UPDATE,
+                old_values=None,
+                new_values=result,
+                operator_id=operator_id
+            )
+            
+            logger.info(f"批量更新槽位完成: {successful}/{len(updates)} 成功")
+            return result
+            
+        except Exception as e:
+            logger.error(f"批量更新槽位失败: {str(e)}")
+            return {
+                'successful': 0,
+                'failed': len(updates),
+                'total': len(updates),
+                'errors': [str(e)],
+                'timestamp': datetime.now().isoformat()
+            }
+    
+    async def create_slot_dependency(self, dependency_data: Dict[str, Any], 
+                                   operator_id: str = "system") -> Optional[SlotDependency]:
+        """
+        创建槽位依赖关系并记录审计日志
+        
+        Args:
+            dependency_data: 依赖关系数据
+            operator_id: 操作者ID
+            
+        Returns:
+            Optional[SlotDependency]: 创建的依赖关系对象
+        """
+        try:
+            # 创建依赖关系
+            dependency = SlotDependency.create(**dependency_data)
+            
+            # 记录审计日志
+            await self.audit_service.log_config_change(
+                table_name="slot_dependencies",
+                record_id=dependency.id,
+                action=AuditAction.INSERT,
+                old_values=None,
+                new_values=dependency_data,
+                operator_id=operator_id
+            )
+            
+            # 失效相关缓存
+            try:
+                dependent_slot = dependency.dependent_slot
+                await self.cache_invalidation_service.invalidate_slot_caches(
+                    dependent_slot.intent_id, [dependent_slot.slot_name], 
+                    CacheInvalidationType.CONFIG_CHANGE
+                )
+            except Exception as cache_error:
+                logger.warning(f"失效依赖关系缓存失败: {str(cache_error)}")
+            
+            logger.info(f"槽位依赖关系创建成功: {dependency.id} by {operator_id}")
+            return dependency
+            
+        except Exception as e:
+            logger.error(f"创建槽位依赖关系失败: {str(e)}")
+            return None
+    
+    async def delete_slot_dependency(self, dependency_id: int, operator_id: str = "system") -> bool:
+        """
+        删除槽位依赖关系并记录审计日志
+        
+        Args:
+            dependency_id: 依赖关系ID
+            operator_id: 操作者ID
+            
+        Returns:
+            bool: 删除是否成功
+        """
+        try:
+            # 获取要删除的依赖关系信息
+            dependency = SlotDependency.get_by_id(dependency_id)
+            old_values = {
+                'dependent_slot_id': dependency.dependent_slot.id,
+                'required_slot_id': dependency.required_slot.id,
+                'dependency_type': dependency.dependency_type,
+                'condition': dependency.condition,
+                'priority': dependency.priority,
+                'deleted_at': datetime.now().isoformat()
+            }
+            
+            dependent_slot = dependency.dependent_slot
+            
+            # 执行删除
+            dependency.delete_instance()
+            
+            # 记录审计日志
+            await self.audit_service.log_config_change(
+                table_name="slot_dependencies",
+                record_id=dependency_id,
+                action=AuditAction.DELETE,
+                old_values=old_values,
+                new_values=None,
+                operator_id=operator_id
+            )
+            
+            # 失效相关缓存
+            try:
+                await self.cache_invalidation_service.invalidate_slot_caches(
+                    dependent_slot.intent_id, [dependent_slot.slot_name], 
+                    CacheInvalidationType.CONFIG_CHANGE
+                )
+            except Exception as cache_error:
+                logger.warning(f"失效依赖关系缓存失败: {str(cache_error)}")
+            
+            logger.info(f"槽位依赖关系删除成功: {dependency_id} by {operator_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"删除槽位依赖关系失败: {str(e)}")
+            return False
+    
+    # V2.2重构: 新增配置管理方法，集成事件驱动架构
+    async def create_slot_config(
+        self,
+        slot_data: Dict[str, Any],
+        operator_id: str = 'system'
+    ) -> Dict[str, Any]:
+        """
+        创建槽位配置（使用统一的配置管理服务）
+        
+        Args:
+            slot_data: 槽位数据
+            operator_id: 操作者ID
+            
+        Returns:
+            Dict: 操作结果
+        """
+        result = await self.config_management_service.create_slot(slot_data, operator_id)
+        return result.to_dict()
+    
+    async def update_slot_config(
+        self,
+        slot_id: int,
+        updates: Dict[str, Any],
+        operator_id: str = 'system'
+    ) -> Dict[str, Any]:
+        """
+        更新槽位配置（使用统一的配置管理服务）
+        
+        Args:
+            slot_id: 槽位ID
+            updates: 更新数据
+            operator_id: 操作者ID
+            
+        Returns:
+            Dict: 操作结果
+        """
+        result = await self.config_management_service.update_slot(slot_id, updates, operator_id)
+        return result.to_dict()
+    
+    async def delete_slot_config(
+        self,
+        slot_id: int,
+        operator_id: str = 'system'
+    ) -> Dict[str, Any]:
+        """
+        删除槽位配置（使用统一的配置管理服务）
+        
+        Args:
+            slot_id: 槽位ID
+            operator_id: 操作者ID
+            
+        Returns:
+            Dict: 操作结果
+        """
+        result = await self.config_management_service.delete_slot(slot_id, operator_id)
+        return result.to_dict()
+    
+    async def get_slot_change_history(
+        self,
+        slot_id: Optional[int] = None,
+        limit: int = 100
+    ) -> List[Dict[str, Any]]:
+        """
+        获取槽位配置变更历史
+        
+        Args:
+            slot_id: 槽位ID，为None时获取所有槽位的变更历史
+            limit: 返回记录数限制
+            
+        Returns:
+            List[Dict]: 变更历史列表
+        """
+        return await self.config_management_service.get_config_change_history(
+            entity_type='slot',
+            entity_id=slot_id,
+            limit=limit
+        )

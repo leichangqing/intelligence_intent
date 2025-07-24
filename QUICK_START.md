@@ -2,20 +2,33 @@
 
 ## 项目概述
 
-智能意图识别系统是基于FastAPI + MySQL + Peewee + Redis + LangChain + Duckling技术栈构建的B2B意图识别服务，支持：
+智能意图识别系统v2.2是基于FastAPI + MySQL + Peewee + Redis + LangChain + Duckling技术栈构建的混合架构意图识别服务。
+
+## 🏗️ 混合架构设计核心理念
+
+**计算层无状态 + 存储层有状态**，专为多轮对话业务场景优化：
+
+- **计算无状态**: 每次API调用独立处理，支持水平扩展和负载均衡
+- **存储有状态**: 持久化对话历史、槽位状态和会话上下文，支持智能推理
+- **历史上下文**: 基于对话历史的意图识别和槽位继承
+- **会话管理**: 完整的会话生命周期和状态跟踪
+
+## 🚀 核心功能特性
 
 - 🎯 高精度意图识别和歧义处理
-- 🔧 智能槽位提取和验证
+- 🔧 智能槽位提取和验证 (基于slot_values表)
 - 🔄 意图转移和打岔处理
 - 🚀 RAGFLOW无缝集成
-- ⚡ Redis多层缓存优化
+- ⚡ Redis多层缓存优化 (v2.2应用层事件驱动)
+- 🏢 实体词典和响应类型管理
 - 📊 完整的监控和日志系统
+- 💬 多轮对话历史推理和上下文继承
 
 ## 环境要求
 
 - Python 3.11+
-- MySQL 8.0+
-- Redis 7.0+
+- MySQL 8.0+ (支持v2.2新增表结构)
+- Redis 7.0+ (多层缓存架构)
 - Docker & Docker Compose（可选）
 
 ## 快速启动
@@ -56,6 +69,8 @@ make install
 
 # 启动MySQL和Redis（如果没有Docker）
 # 请确保MySQL和Redis服务正在运行
+# v2.2注意：确保MySQL支持JSON字段和视图
+# Redis需要支持pipeline和事务操作
 
 # 复制配置文件
 cp .env.example .env
@@ -105,16 +120,74 @@ curl http://localhost:8000/api/v1/health
 ### 2. 访问API文档
 浏览器打开: http://localhost:8000/docs
 
-### 3. 测试对话接口
+### 3. 测试对话接口 (混合架构)
+
+#### 基础对话测试
 ```bash
 curl -X POST "http://localhost:8000/api/v1/chat/interact" \
   -H "Content-Type: application/json" \
   -d '{
-    "user_id": "test_user",
-    "input": "我想订机票",
+    "user_id": "enterprise_user_001",
+    "input": "我想订一张明天去上海的机票"
+  }'
+```
+
+#### 完整业务上下文测试
+```bash
+curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "enterprise_user_001",
+    "input": "我想订一张明天去上海的机票",
     "context": {
       "device_info": {
-        "platform": "web"
+        "platform": "web",
+        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+        "ip_address": "192.168.1.100",
+        "screen_resolution": "1920x1080",
+        "language": "zh-CN"
+      },
+      "location": {
+        "city": "北京",
+        "latitude": 39.9042,
+        "longitude": 116.4074,
+        "timezone": "Asia/Shanghai"
+      },
+      "client_system_id": "enterprise_portal_v2.1",
+      "request_trace_id": "req_trace_20240120_001",
+      "business_context": {
+        "department": "sales",
+        "cost_center": "CC1001",
+        "approval_required": true,
+        "booking_policy": "economy_only"
+      },
+      "temp_preferences": {
+        "currency": "USD"
+      }
+    }
+  }'
+```
+
+#### 移动端测试
+```bash
+curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "mobile_user_002",
+    "input": "查询我的账户余额",
+    "context": {
+      "device_info": {
+        "platform": "mobile",
+        "user_agent": "MobileApp/1.0 (iOS 16.4)",
+        "ip_address": "10.0.0.50",
+        "screen_resolution": "414x896",
+        "language": "zh-CN"
+      },
+      "client_system_id": "mobile_app_ios",
+      "request_trace_id": "mobile_req_001",
+      "business_context": {
+        "app_version": "1.2.3",
+        "channel": "mobile"
       }
     }
   }'
@@ -138,39 +211,105 @@ curl -X POST "http://localhost:8000/api/v1/chat/interact" \
 2. **check_balance** (查银行卡余额)
    - 槽位：银行卡号、验证码
 
-### 测试对话示例
+### 混合架构测试场景
 
+#### 1. 完整信息预订 (企业用户 - 有状态对话)
 ```bash
-# 完整信息订机票
 curl -X POST "http://localhost:8000/api/v1/chat/interact" \
   -H "Content-Type: application/json" \
   -d '{
-    "user_id": "user123",
-    "input": "我想订一张明天从北京到上海的机票"
+    "user_id": "enterprise_user_001",
+    "input": "我想订一张明天从北京到上海的机票",
+    "context": {
+      "client_system_id": "enterprise_portal_v2.1",
+      "business_context": {
+        "department": "sales",
+        "cost_center": "CC1001"
+      }
+    }
   }'
+```
 
-# 信息不完整
+#### 2. 信息不完整 (槽位填充)
+```bash
 curl -X POST "http://localhost:8000/api/v1/chat/interact" \
   -H "Content-Type: application/json" \
   -d '{
-    "user_id": "user123", 
-    "input": "我想订机票"
+    "user_id": "enterprise_user_002",
+    "input": "我想订机票",
+    "context": {
+      "device_info": {
+        "platform": "web"
+      },
+      "client_system_id": "hr_system_v1.0"
+    }
   }'
+```
 
-# 意图歧义
+#### 3. 意图歧义处理
+```bash
 curl -X POST "http://localhost:8000/api/v1/chat/interact" \
   -H "Content-Type: application/json" \
   -d '{
-    "user_id": "user123",
-    "input": "我想订票"
+    "user_id": "enterprise_user_003",
+    "input": "我想订票",
+    "context": {
+      "request_trace_id": "trace_001",
+      "business_context": {
+        "department": "finance"
+      }
+    }
   }'
+```
 
-# 非意图输入（RAGFLOW处理）
+#### 4. 移动端用户场景
+```bash
 curl -X POST "http://localhost:8000/api/v1/chat/interact" \
   -H "Content-Type: application/json" \
   -d '{
-    "user_id": "user123",
-    "input": "今天天气怎么样？"
+    "user_id": "mobile_user_001",
+    "input": "查询我的银行卡余额",
+    "context": {
+      "device_info": {
+        "platform": "mobile",
+        "user_agent": "MobileApp/1.0"
+      },
+      "client_system_id": "mobile_banking_app"
+    }
+  }'
+```
+
+#### 5. 临时偏好覆盖
+```bash
+curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "enterprise_user_004",
+    "input": "帮我订个酒店",
+    "context": {
+      "temp_preferences": {
+        "currency": "USD",
+        "language": "en-US"
+      },
+      "business_context": {
+        "cost_center": "CC2001",
+        "approval_required": false
+      }
+    }
+  }'
+```
+
+#### 6. 非意图输入 (RAGFLOW回退)
+```bash
+curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "enterprise_user_005",
+    "input": "今天天气怎么样？",
+    "context": {
+      "client_system_id": "customer_service_portal",
+      "request_trace_id": "weather_query_001"
+    }
   }'
 ```
 
@@ -249,6 +388,7 @@ src/
 2. **Redis连接失败**
    - 检查Redis服务是否启动
    - 验证Redis配置信息
+   - v2.2：检查Redis是否支持pipeline和事务操作
 
 3. **LLM调用失败**
    - 检查API密钥是否正确
@@ -272,10 +412,67 @@ tail -f logs/app.log
 
 ### 性能优化
 
-1. **缓存策略**：合理设置缓存TTL
-2. **数据库优化**：添加适当索引
+1. **缓存策略v2.2**：
+   - 槽位值缓存：3600秒 TTL
+   - 实体词典缓存：7200秒 TTL
+   - 响应类型缓存：3600秒 TTL
+   - 异步日志状态：300秒 TTL
+
+2. **数据库优化v2.2**：
+   - 使用v_active_intents和v_conversation_summary视图
+   - 为新增表添加适当索引
+   - 优化slot_values表查询性能
+
 3. **连接池**：调整数据库和Redis连接池大小
-4. **异步处理**：使用后台任务处理耗时操作
+
+4. **异步处理v2.2**：
+   - 使用async_log_queue表进行日志队列管理
+   - 实现事件驱动的缓存失效机制
+   - 后台处理cache_invalidation_logs
+
+## v2.2混合架构亮点
+
+### 1. 混合架构设计
+
+**核心原则**: 计算无状态 + 存储有状态
+- **API层无状态**: 每次请求独立处理，支持负载均衡和水平扩展
+- **数据层有状态**: 持久化对话历史和会话状态，支持多轮推理
+- **智能上下文**: 基于历史对话的意图识别和槽位继承
+
+### 2. 缓存优化改进
+
+1. **数据规范化缓存**：
+   - 槽位信息从conversations表迁移到slot_values表
+   - 动态获取已填充/缺失槽位信息
+   - 支持槽位验证状态和置信度缓存
+
+2. **实体识别缓存**：
+   - entity_types表缓存实体类型定义
+   - entity_dictionary表缓存实体词典数据  
+   - 支持别名和标准化形式的快速查找
+
+3. **应用层缓存管理**：
+   - 事件驱动的缓存失效机制
+   - 异步日志队列处理
+   - cache_invalidation_logs表跟踪失效状态
+
+### 3. 多轮对话增强
+
+- **会话状态管理**: 完整的会话生命周期跟踪
+- **历史上下文推理**: 基于对话历史的智能决策
+- **槽位继承**: 跨轮次的槽位值累积和验证
+
+### 示例：槽位值缓存使用
+
+```python
+# v2.2: 获取对话的所有已填充槽位 (替代conversations.slots_filled字段)
+filled_slots = await cache_service.get_conversation_filled_slots(conversation_id)
+# 返回: {"departure_city": {"value": "北京", "confidence": 0.95, "is_confirmed": True}}
+
+# 缓存实体识别结果
+entity_result = await cache_service.lookup_entity("city", "北京")
+# 返回: {"entity_value": "北京", "canonical_form": "北京市", "aliases": ["北京", "京城"]}
+```
 
 ## 生产部署
 

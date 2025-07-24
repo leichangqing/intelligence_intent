@@ -1,80 +1,258 @@
-# Redis 缓存数据示例
+# Redis 缓存数据示例 (混合架构 V2.2)
 
-## 1. 缓存键命名规范
+## v2.2 版本主要更新
 
-### 1.1 键名前缀
-- `intent_config:` - 意图配置缓存
-- `slot_config:` - 槽位配置缓存
-- `function_config:` - 功能调用配置缓存
-- `template_config:` - Prompt模板配置缓存
-- `user_context:` - 用户上下文缓存
-- `nlu_result:` - NLU结果缓存
-- `intent_match:` - 意图匹配结果缓存
-- `api_call:` - API调用结果缓存
-- `security_config:` - 安全配置缓存
-- `audit_log:` - 审计日志缓存
+**架构优化变化**:
+- **混合架构设计**: 计算层无状态，存储层有状态，支持多轮对话的历史上下文推理
+- **数据结构规范化**: conversations表移除slots_filled/slots_missing字段，槽位信息从slot_values表动态获取
+- **新增模型支持**: 支持entity_types、entity_dictionary、response_types、conversation_statuses等新模型的缓存
+- **应用层缓存管理**: 缓存失效逻辑从数据库触发器迁移到应用层事件驱动机制  
+- **异步日志缓存**: 新增async_log_queue和cache_invalidation_logs的缓存策略
 
-### 1.2 TTL设置
-- 配置数据: 3600秒 (1小时)
-- 模板配置: 3600秒 (1小时)
-- 用户上下文: 7200秒 (2小时)
-- NLU结果: 1800秒 (30分钟)
-- 意图匹配: 1800秒 (30分钟)
-- API调用结果: 300秒 (5分钟)
-- 安全配置: 7200秒 (2小时)
-- 审计日志: 900秒 (15分钟)
+## 1. 统一缓存键命名规范
 
-## 2. 意图配置缓存
+### 1.1 缓存键模板 v2.2 (CacheService优化)
+基于 `src/services/cache_service.py` 的统一模板系统：
 
-### 2.1 意图配置列表
-**Key**: `intent_config:all`
+```python
+CACHE_KEY_TEMPLATES = {
+    # 基础模板
+    'session': 'intent_system:session_context:{session_id}',
+    'session_basic': 'intent_system:session:{session_id}',
+    'intent_recognition': 'intent_system:nlu_result:{input_hash}:{user_id}',
+    'intent_config': 'intent_system:intent_config:{intent_name}',
+    'user_profile': 'intent_system:user_profile:{user_id}',
+    'conversation_history': 'intent_system:history:{session_id}:{limit}',
+    'slot_definitions': 'intent_system:slot_definitions:{intent_name}',
+    'function_def': 'intent_system:function_def:{function_name}',
+    'transfer_history': 'intent_system:transfer_history:{session_id}:{limit}',
+    'stack': 'intent_system:stack:{session_id}',
+    'stats_session': 'intent_system:stats:session:{user_id}',
+    'rate_limit': 'intent_system:rate_limit:{config_name}',
+    'ragflow_config': 'intent_system:config:{config_name}',
+    'query_history': 'intent_system:query_history:{session_id}',
+    'param_schemas': 'intent_system:param_schemas:{function_name}',
+    'session_patterns': 'intent_system:session_patterns:{session_id}',
+    'enhanced_query': 'intent_system:enhanced_query:{query_hash}',
+    'slot_dependencies': 'intent_system:slot_dependencies:{intent_id}',
+    
+    # v2.2 新增模板
+    'slot_values': 'intent_system:slot_values:{conversation_id}',
+    'slot_value_record': 'intent_system:slot_value:{conversation_id}:{slot_id}',
+    'entity_types': 'intent_system:entity_types:all',
+    'entity_type': 'intent_system:entity_type:{type_code}',
+    'entity_dictionary': 'intent_system:entity_dict:{type_code}',
+    'response_types': 'intent_system:response_types:{category}',
+    'response_type': 'intent_system:response_type:{type_code}',
+    'conversation_statuses': 'intent_system:conv_statuses:all',
+    'conversation_status': 'intent_system:conv_status:{status_code}',
+    'system_configs': 'intent_system:system_config:{category}',
+    'prompt_templates': 'intent_system:prompt_templates:{template_type}',
+    'slot_extraction_rules': 'intent_system:slot_rules:{slot_id}',
+    'async_log_status': 'intent_system:async_log_status:{log_type}',
+    'cache_invalidation': 'intent_system:cache_invalidation:{table_name}:{record_id}'
+}
+```
+
+### 1.2 TTL设置标准 v2.2
+- **会话数据**: 3600秒 (1小时)
+- **用户偏好**: 7200秒 (2小时) 
+- **意图识别结果**: 1800秒 (30分钟)
+- **配置数据**: 3600秒 (1小时)
+- **业务API结果**: 600秒 (10分钟)
+- **性能统计**: 300秒 (5分钟)
+- **槽位值数据**: 3600秒 (1小时) *v2.2新增*
+- **实体词典**: 7200秒 (2小时) *v2.2新增*
+- **响应类型**: 3600秒 (1小时) *v2.2新增*
+- **异步日志状态**: 300秒 (5分钟) *v2.2新增*
+- **缓存失效记录**: 1800秒 (30分钟) *v2.2新增*
+
+## 2. 混合架构会话缓存
+
+### 2.1 基础会话缓存
+**Key**: `intent_system:session:sess_a1b2c3d4e5f6`
 **TTL**: 3600秒
-**数据结构**: Hash
+**数据结构**: JSON (基于SessionDataStructure)
+
 ```json
 {
-  "book_flight": {
-    "id": 1,
-    "intent_name": "book_flight",
-    "display_name": "订机票",
-    "description": "用户想要预订机票的意图",
-    "confidence_threshold": 0.8,
-    "priority": 10,
-    "is_active": true,
-    "examples": [
-      "我想订机票",
-      "帮我订张机票",
-      "我要买机票",
-      "预订航班",
-      "订从北京到上海的机票"
-    ]
+  "id": 123,
+  "session_id": "sess_a1b2c3d4e5f6",
+  "user_id": "enterprise_user_001",
+  "context": {
+    "session_id": "sess_a1b2c3d4e5f6",
+    "user_id": "enterprise_user_001",
+    "created_at": "2024-01-20T10:30:00.123456",
+    "current_intent": "booking_flight",
+    "current_slots": {
+      "departure_city": "北京",
+      "arrival_city": "上海",
+      "departure_date": "2024-01-21"
+    },
+    "conversation_history": [
+      {
+        "turn": 1,
+        "user_input": "我想订一张明天去上海的机票",
+        "intent": "booking_flight",
+        "confidence": 0.95,
+        "timestamp": "2024-01-20T10:30:00Z"
+      }
+    ],
+    
+    // 混合架构业务字段 - 从API请求映射
+    "device_info": {
+      "platform": "web",
+      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+      "ip_address": "192.168.1.100",
+      "screen_resolution": "1920x1080",
+      "language": "zh-CN"
+    },
+    "location": {
+      "city": "北京",
+      "latitude": 39.9042,
+      "longitude": 116.4074,
+      "timezone": "Asia/Shanghai"
+    },
+    "client_system_id": "enterprise_portal_v2.1",
+    "request_trace_id": "req_trace_20240120_001",
+    "business_context": {
+      "department": "sales",
+      "cost_center": "CC1001",
+      "approval_required": true,
+      "booking_policy": "economy_only"
+    },
+    "temp_preferences": {
+      "currency": "USD"  // 临时覆盖系统配置
+    },
+    
+    // 系统管理的用户偏好 - 从数据库加载
+    "user_preferences": {
+      "language": "zh-CN",
+      "currency": "CNY",  // 被temp_preferences覆盖为USD
+      "timezone": "Asia/Shanghai",
+      "notification_enabled": true,
+      "theme": "light",
+      "preferred_airline": "国航",
+      "default_travel_class": "economy",
+      "price_alert_enabled": false
+    }
   },
-  "check_balance": {
-    "id": 2,
-    "intent_name": "check_balance",
-    "display_name": "查银行卡余额",
-    "description": "用户想要查询银行卡余额的意图",
-    "confidence_threshold": 0.75,
-    "priority": 8,
-    "is_active": true,
-    "examples": [
-      "查余额",
-      "我的银行卡余额",
-      "账户余额多少",
-      "查询余额"
-    ]
+  "created_at": "2024-01-20T10:30:00.123456",
+  
+  // 快捷访问字段（从context提取）
+  "current_intent": "booking_flight",
+  "current_slots": {
+    "departure_city": "北京",
+    "arrival_city": "上海", 
+    "departure_date": "2024-01-21"
+  },
+  "conversation_history": [...],
+  "device_info": {...},
+  "location": {...},
+  "user_preferences": {...}
+}
+```
+
+## 3. 意图识别结果缓存
+
+### 3.1 NLU处理结果
+**Key**: `intent_system:nlu_result:12345678:enterprise_user_001`
+**TTL**: 1800秒
+**数据结构**: JSON
+
+```json
+{
+  "input_text": "我想订一张明天去上海的机票",
+  "input_hash": 12345678,
+  "user_id": "enterprise_user_001",
+  "intent": {
+    "intent_name": "booking_flight",
+    "display_name": "机票预订",
+    "confidence": 0.95,
+    "id": 1
+  },
+  "slots": {
+    "destination": {
+      "value": "上海",
+      "confidence": 0.9,
+      "source": "llm",
+      "original_text": "上海",
+      "is_validated": true
+    },
+    "departure_date": {
+      "value": "明天",
+      "normalized_value": "2024-01-21",
+      "confidence": 0.85,
+      "source": "llm",
+      "original_text": "明天"
+    }
+  },
+  "confidence": 0.95,
+  "processing_time_ms": 250,
+  "cached_at": "2024-01-20T10:30:01.234567",
+  "llm_model": "gpt-4",
+  "context_used": {
+    "user_preferences": true,
+    "conversation_history": true,
+    "business_context": true
   }
 }
 ```
 
-### 2.2 单个意图配置
-**Key**: `intent_config:book_flight`
+## 4. 用户偏好管理缓存 (混合架构)
+
+### 4.1 系统配置的用户偏好
+**Key**: `intent_system:user_profile:enterprise_user_001`
+**TTL**: 7200秒
+**数据结构**: JSON
+
+```json
+{
+  "user_id": "enterprise_user_001",
+  "loaded_at": "2024-01-20T10:30:00Z",
+  "preferences": {
+    // 基础偏好
+    "language": "zh-CN",
+    "currency": "CNY",
+    "timezone": "Asia/Shanghai",
+    "date_format": "YYYY-MM-DD",
+    "time_format": "24h",
+    "notification_enabled": true,
+    "theme": "light",
+    "auto_logout_minutes": 120,
+    
+    // 业务偏好 (系统管理员配置)
+    "preferred_airline": "国航",
+    "preferred_hotel_chain": "如家",
+    "default_travel_class": "economy",
+    "price_alert_enabled": false,
+    "booking_approval_required": true,
+    "cost_center": "CC1001",
+    "expense_limit": 5000.00
+  },
+  "profile_data": {
+    "department": "sales",
+    "manager_id": "manager_001",
+    "employee_level": "senior",
+    "travel_policy_version": "v2.1"
+  },
+  "last_updated": "2024-01-15T09:00:00Z",
+  "managed_by": "admin_001"
+}
+```
+
+## 5. 意图配置缓存
+
+### 5.1 单个意图配置
+**Key**: `intent_system:intent_config:booking_flight`
 **TTL**: 3600秒
-**数据结构**: String (JSON)
+**数据结构**: JSON
+
 ```json
 {
   "id": 1,
-  "intent_name": "book_flight",
-  "display_name": "订机票",
+  "intent_name": "booking_flight",
+  "display_name": "机票预订",
   "description": "用户想要预订机票的意图",
   "confidence_threshold": 0.8,
   "priority": 10,
@@ -91,748 +269,638 @@
       "slot_name": "departure_city",
       "slot_type": "TEXT",
       "is_required": true,
+      "validation_rules": {
+        "pattern": "^[\\u4e00-\\u9fa5]{2,10}$",
+        "allowed_values": ["北京", "上海", "广州", "深圳"]
+      },
       "prompt_template": "请告诉我出发城市是哪里？"
     },
     {
-      "slot_name": "arrival_city",
+      "slot_name": "arrival_city", 
       "slot_type": "TEXT",
       "is_required": true,
+      "validation_rules": {
+        "pattern": "^[\\u4e00-\\u9fa5]{2,10}$",
+        "allowed_values": ["北京", "上海", "广州", "深圳"]
+      },
       "prompt_template": "请告诉我到达城市是哪里？"
     },
     {
       "slot_name": "departure_date",
       "slot_type": "DATE",
       "is_required": true,
+      "validation_rules": {
+        "date_format": "YYYY-MM-DD",
+        "min_date": "today",
+        "max_date": "+30d"
+      },
       "prompt_template": "请告诉我出发日期是哪天？"
     }
   ],
   "function_call": {
     "function_name": "book_flight_api",
-    "api_endpoint": "https://api.flight.com/v1/booking",
+    "api_endpoint": "https://api.enterprise-travel.com/v1/booking",
     "http_method": "POST",
+    "headers": {
+      "Authorization": "Bearer ${API_TOKEN}",
+      "Content-Type": "application/json"
+    },
     "param_mapping": {
-      "departure_city": "departure_city",
-      "arrival_city": "arrival_city",
-      "departure_date": "departure_date"
-    }
-  }
-}
-```
-
-## 3. 用户上下文缓存
-
-### 3.1 用户上下文信息
-**Key**: `user_context:user123`
-**TTL**: 7200秒
-**数据结构**: Hash
-```json
-{
-  "user_id": "user123",
-  "last_active": "2024-12-01T10:05:00Z",
-  "preferences": {
-    "preferred_class": "经济舱",
-    "frequent_routes": ["北京-上海", "上海-深圳"],
-    "preferred_airlines": ["CA", "MU"],
-    "language": "zh-CN"
-  },
-  "recent_intents": [
-    {"intent": "book_flight", "timestamp": "2024-12-01T10:00:00Z", "frequency": 5},
-    {"intent": "check_flight", "timestamp": "2024-12-01T09:30:00Z", "frequency": 2}
-  ]
-}
-```
-
-### 3.2 意图匹配结果缓存
-**Key**: `intent_match:{hash_of_input}`
-**TTL**: 1800秒
-**数据结构**: Hash
-```json
-{
-  "input": "我想订一张明天从北京到上海的机票",
-  "input_hash": "abc123def456",
-  "intent": "book_flight",
-  "confidence": 0.95,
-  "slots": {
-    "departure_city": {
-      "value": "北京",
-      "confidence": 0.98,
-      "source": "user_input"
+      "departure_city": "from",
+      "arrival_city": "to", 
+      "departure_date": "date",
+      "user_id": "employee_id"
     },
-    "arrival_city": {
-      "value": "上海",
-      "confidence": 0.97,
-      "source": "user_input"
-    },
-    "departure_date": {
-      "value": "2024-12-02",
-      "confidence": 0.90,
-      "source": "user_input"
-    }
+    "timeout_seconds": 30,
+    "retry_count": 3
   },
-  "cached_at": "2024-12-01T10:00:00Z"
+  "created_at": "2024-01-15T09:00:00Z",
+  "updated_at": "2024-01-18T14:30:00Z"
 }
 ```
 
-## 4. 用户上下文缓存
+## 6. 对话历史缓存
 
-### 4.1 用户历史偏好
-**Key**: `user_context:user123:preferences`
-**TTL**: 604800秒 (7天)
-**数据结构**: Hash
-```json
-{
-  "frequent_intents": {
-    "book_flight": 15,
-    "check_balance": 8,
-    "book_hotel": 3
-  },
-  "slot_preferences": {
-    "seat_class": "商务舱",
-    "departure_city": "北京",
-    "bank_card": "6222****5678"
-  },
-  "interaction_patterns": {
-    "avg_response_time": 3.5,
-    "preferred_time_slots": ["09:00-12:00", "14:00-18:00"],
-    "communication_style": "direct"
-  },
-  "last_successful_intents": {
-    "book_flight": {
-      "completed_at": "2024-11-28T15:30:00Z",
-      "slots": {
-        "departure_city": "北京",
-        "arrival_city": "上海",
-        "departure_date": "2024-11-29"
-      }
-    }
-  }
-}
-```
-
-### 4.2 用户当前会话上下文
-**Key**: `user_context:user123:current`
+### 6.1 会话对话历史
+**Key**: `intent_system:history:sess_a1b2c3d4e5f6:20`
 **TTL**: 86400秒
-**数据结构**: Hash
-```json
-{
-  "active_sessions": ["sess_20241201_001"],
-  "current_session": "sess_20241201_001",
-  "conversation_turn": 3,
-  "last_interaction": "2024-12-01T10:05:00Z",
-  "device_info": {
-    "platform": "web",
-    "user_agent": "Mozilla/5.0...",
-    "ip_address": "192.168.1.100"
-  },
-  "temporary_context": {
-    "mentioned_entities": ["北京", "上海", "明天"],
-    "conversation_topic": "travel",
-    "emotional_state": "neutral"
-  }
-}
-```
+**数据结构**: JSON Array
 
-## 5. NLU结果缓存
-
-### 5.1 意图识别结果
-**Key**: `nlu_result:hash_of_input_text`
-**TTL**: 1800秒
-**数据结构**: String (JSON)
-```json
-{
-  "input_text": "我想订一张明天从北京到上海的机票",
-  "intent_results": [
-    {
-      "intent": "book_flight",
-      "confidence": 0.95,
-      "reasoning": "用户明确表达订机票意图"
-    },
-    {
-      "intent": "travel_inquiry",
-      "confidence": 0.25,
-      "reasoning": "包含旅行相关信息"
-    }
-  ],
-  "entities": [
-    {
-      "entity": "departure_city",
-      "value": "北京",
-      "confidence": 0.98,
-      "start": 7,
-      "end": 9
-    },
-    {
-      "entity": "arrival_city",
-      "value": "上海",
-      "confidence": 0.97,
-      "start": 11,
-      "end": 13
-    },
-    {
-      "entity": "departure_date",
-      "value": "明天",
-      "normalized_value": "2024-12-02",
-      "confidence": 0.90,
-      "start": 4,
-      "end": 6
-    }
-  ],
-  "processed_at": "2024-12-01T10:01:00Z",
-  "processing_time_ms": 250
-}
-```
-
-## 6. 歧义处理缓存
-
-### 6.1 意图歧义状态
-**Key**: `ambiguity:user123:sess_20241201_001`
-**TTL**: 300秒
-**数据结构**: Hash
-```json
-{
-  "conversation_id": 12345,
-  "original_input": "我想订票",
-  "candidate_intents": [
-    {
-      "intent": "book_flight",
-      "confidence": 0.72,
-      "display_name": "机票"
-    },
-    {
-      "intent": "book_train",
-      "confidence": 0.68,
-      "display_name": "火车票"
-    },
-    {
-      "intent": "book_movie",
-      "confidence": 0.65,
-      "display_name": "电影票"
-    }
-  ],
-  "disambiguation_question": "请问您想要预订哪种票？\n1. 机票\n2. 火车票\n3. 电影票",
-  "created_at": "2024-12-01T10:00:00Z",
-  "awaiting_response": true,
-  "context": {
-    "previous_intents": ["check_balance"],
-    "user_history": ["book_flight", "book_flight", "book_train"]
-  }
-}
-```
-
-## 7. 对话历史缓存
-
-### 7.1 会话对话历史
-**Key**: `conversation:user123:sess_20241201_001`
-**TTL**: 86400秒
-**数据结构**: List
 ```json
 [
   {
     "turn": 1,
-    "timestamp": "2024-12-01T10:00:00Z",
-    "user_input": "我想订机票",
-    "intent_recognized": "book_flight",
-    "confidence": 0.92,
-    "slots_filled": {},
-    "system_response": "好的，请告诉我出发城市是哪里？",
+    "timestamp": "2024-01-20T10:30:00Z",
+    "user_input": "我想订一张明天去上海的机票",
+    "intent_recognized": "booking_flight",
+    "confidence": 0.95,
+    "slots_extracted": {
+      "arrival_city": "上海",
+      "departure_date": "明天"
+    },
+    "slots_filled": {
+      "arrival_city": "上海",
+      "departure_date": "2024-01-21"
+    },
+    "system_response": "好的，我帮您预订明天去上海的机票。请告诉我出发城市是哪里？",
     "response_type": "slot_filling",
-    "processing_time_ms": 180
+    "processing_time_ms": 180,
+    "request_trace_id": "req_trace_20240120_001"
   },
   {
     "turn": 2,
-    "timestamp": "2024-12-01T10:02:00Z",
+    "timestamp": "2024-01-20T10:31:30Z",
     "user_input": "北京",
-    "intent_recognized": "book_flight",
-    "confidence": 0.95,
-    "slots_filled": {
+    "intent_recognized": "booking_flight",
+    "confidence": 0.98,
+    "slots_extracted": {
       "departure_city": "北京"
     },
-    "system_response": "好的，从北京出发。请告诉我到达城市是哪里？",
-    "response_type": "slot_filling",
-    "processing_time_ms": 120
+    "slots_filled": {
+      "departure_city": "北京",
+      "arrival_city": "上海",
+      "departure_date": "2024-01-21"
+    },
+    "system_response": "从北京到上海，明天出发。正在为您查询可用航班...",
+    "response_type": "api_calling",
+    "processing_time_ms": 120,
+    "request_trace_id": "req_trace_20240120_002"
   },
   {
     "turn": 3,
-    "timestamp": "2024-12-01T10:03:00Z",
-    "user_input": "上海",
-    "intent_recognized": "book_flight",
-    "confidence": 0.93,
-    "slots_filled": {
-      "departure_city": "北京",
-      "arrival_city": "上海"
+    "timestamp": "2024-01-20T10:32:45Z",
+    "user_input": "",
+    "intent_recognized": "booking_flight",
+    "api_call_result": {
+      "success": true,
+      "order_id": "FL202401210001",
+      "flight_number": "CA1234",
+      "departure_time": "2024-01-21T08:30:00",
+      "arrival_time": "2024-01-21T10:45:00",
+      "price": 580.00,
+      "seat": "12A"
     },
-    "system_response": "北京到上海，请告诉我出发日期是哪天？",
-    "response_type": "slot_filling",
-    "processing_time_ms": 110
+    "system_response": "已为您成功预订机票！\\n航班号：CA1234\\n出发：2024-01-21 08:30 北京\\n到达：2024-01-21 10:45 上海\\n座位：12A\\n价格：580元\\n订单号：FL202401210001",
+    "response_type": "function_result",
+    "processing_time_ms": 2400,
+    "request_trace_id": "req_trace_20240120_003"
   }
 ]
 ```
 
-## 8. 功能调用缓存
+## 7. 业务API调用缓存
 
-### 8.1 API调用结果缓存
-**Key**: `api_result:book_flight:hash_of_params`
-**TTL**: 600秒 (10分钟)
-**数据结构**: String (JSON)
+### 7.1 API调用结果缓存
+**Key**: `intent_system:api_result:book_flight:hash_of_params`
+**TTL**: 600秒
+**数据结构**: JSON
+
 ```json
 {
   "function_name": "book_flight_api",
+  "api_endpoint": "https://api.enterprise-travel.com/v1/booking",
   "params": {
-    "departure_city": "北京",
-    "arrival_city": "上海",
-    "departure_date": "2024-12-02",
+    "from": "北京",
+    "to": "上海", 
+    "date": "2024-01-21",
+    "employee_id": "enterprise_user_001",
     "passenger_count": 1,
-    "seat_class": "经济舱"
+    "class": "economy"
+  },
+  "request_headers": {
+    "Authorization": "Bearer ey...",
+    "Content-Type": "application/json",
+    "X-Trace-ID": "req_trace_20240120_003"
   },
   "result": {
     "success": true,
-    "order_id": "FL202412010001",
+    "order_id": "FL202401210001",
     "flight_number": "CA1234",
-    "departure_time": "2024-12-02T08:30:00",
-    "arrival_time": "2024-12-02T10:45:00",
+    "airline": "中国国际航空",
+    "departure_time": "2024-01-21T08:30:00",
+    "arrival_time": "2024-01-21T10:45:00",
     "price": 580.00,
-    "seat": "12A"
+    "currency": "CNY",
+    "seat": "12A",
+    "booking_reference": "ABCD123",
+    "status": "confirmed"
   },
-  "cached_at": "2024-12-01T10:05:00Z",
-  "expires_at": "2024-12-01T10:15:00Z"
-}
-```
-
-## 9. 系统配置缓存
-
-### 9.1 RAGFLOW配置
-**Key**: `ragflow_config:default`
-**TTL**: 3600秒
-**数据结构**: Hash
-```json
-{
-  "config_name": "default_ragflow",
-  "api_endpoint": "https://api.ragflow.com/v1/chat",
-  "api_key": "ragflow_api_key_here",
-  "headers": {
-    "Content-Type": "application/json",
-    "Authorization": "Bearer ${API_KEY}"
-  },
-  "timeout_seconds": 30,
-  "is_active": true,
-  "rate_limit": {
-    "requests_per_minute": 100,
-    "requests_per_hour": 1000
+  "response_time_ms": 2400,
+  "cached_at": "2024-01-20T10:32:45Z",
+  "expires_at": "2024-01-20T10:42:45Z",
+  "business_context": {
+    "department": "sales",
+    "cost_center": "CC1001",
+    "approval_status": "auto_approved"
   }
 }
 ```
 
-### 9.2 系统阈值配置
-**Key**: `system_config:thresholds`
+## 8. 系统配置缓存
+
+### 8.1 系统阈值配置
+**Key**: `intent_system:config:system_thresholds`
 **TTL**: 3600秒
-**数据结构**: Hash
+**数据结构**: JSON
+
 ```json
 {
+  "config_name": "system_thresholds",
   "intent_confidence_threshold": 0.7,
   "ambiguity_detection_threshold": 0.1,
   "intent_transfer_threshold": 0.1,
   "slot_confidence_threshold": 0.6,
-  "session_timeout_seconds": 86400,
+  "session_timeout_seconds": 3600,
   "max_conversation_turns": 50,
   "max_ambiguity_candidates": 5,
   "nlu_cache_ttl": 1800,
   "api_timeout_seconds": 30,
-  "max_retry_attempts": 3
+  "max_retry_attempts": 3,
+  "enterprise_specific": {
+    "approval_amount_threshold": 1000.00,
+    "max_booking_window_days": 30,
+    "require_manager_approval": true,
+    "cost_center_validation": true
+  },
+  "updated_at": "2024-01-20T09:00:00Z",
+  "version": "v2.2"
 }
 ```
 
-## 10. 缓存更新策略
+## 9. 意图栈管理缓存
 
-### 10.1 配置更新通知
-**Key**: `config_update:notifications`
+### 9.1 用户意图栈
+**Key**: `intent_system:stack:sess_a1b2c3d4e5f6`
+**TTL**: 3600秒
+**数据结构**: JSON
+
+```json
+{
+  "session_id": "sess_a1b2c3d4e5f6",
+  "user_id": "enterprise_user_001",
+  "intent_stack": [
+    {
+      "intent_name": "booking_flight",
+      "intent_id": 1,
+      "status": "active",
+      "confidence": 0.95,
+      "slots": {
+        "departure_city": "北京",
+        "arrival_city": "上海",
+        "departure_date": "2024-01-21"
+      },
+      "pushed_at": "2024-01-20T10:30:00Z",
+      "last_updated": "2024-01-20T10:32:45Z",
+      "completion_status": "completed"
+    }
+  ],
+  "stack_depth": 1,
+  "max_stack_depth": 5,
+  "last_operation": "intent_completed",
+  "last_operation_at": "2024-01-20T10:32:45Z"
+}
+```
+
+## 10. 性能监控缓存
+
+### 10.1 实时系统性能
+**Key**: `intent_system:stats:system:realtime`
+**TTL**: 60秒
+**数据结构**: JSON
+
+```json
+{
+  "timestamp": "2024-01-20T10:33:00Z",
+  "system_metrics": {
+    "cpu_usage_percent": 65.4,
+    "memory_usage_percent": 78.2,
+    "active_sessions": 234,
+    "requests_per_second": 45.6,
+    "average_response_time_ms": 180.5,
+    "cache_hit_rate": 0.89,
+    "database_connections": 12,
+    "error_rate_5min": 0.02
+  },
+  "intent_metrics": {
+    "total_intent_recognitions": 1520,
+    "successful_recognitions": 1444,
+    "ambiguous_cases": 32,
+    "fallback_cases": 44,
+    "average_confidence": 0.87
+  },
+  "api_metrics": {
+    "total_api_calls": 456,
+    "successful_calls": 442,
+    "failed_calls": 14,
+    "average_api_response_time_ms": 850,
+    "timeout_rate": 0.008
+  },
+  "enterprise_metrics": {
+    "enterprise_users_active": 89,
+    "approval_pending_count": 5,
+    "cost_center_distribution": {
+      "CC1001": 45,
+      "CC1002": 28,
+      "CC1003": 16
+    }
+  }
+}
+```
+
+## 11. 缓存失效管理
+
+### 11.1 配置更新通知
+**Key**: `intent_system:cache_invalidation:notifications`
 **TTL**: 300秒
-**数据结构**: List
+**数据结构**: JSON Array
+
 ```json
 [
   {
+    "invalidation_id": "inv_20240120_001",
     "type": "intent_config",
     "action": "update",
-    "target": "book_flight",
-    "timestamp": "2024-12-01T10:00:00Z",
-    "version": 2
+    "target": "booking_flight",
+    "affected_keys": [
+      "intent_system:intent_config:booking_flight",
+      "intent_system:slot_definitions:booking_flight"
+    ],
+    "timestamp": "2024-01-20T10:00:00Z",
+    "operator_id": "admin_001",
+    "reason": "更新置信度阈值"
   },
   {
-    "type": "slot_config",
-    "action": "create",
-    "target": "book_flight.passenger_type",
-    "timestamp": "2024-12-01T10:05:00Z",
-    "version": 1
+    "invalidation_id": "inv_20240120_002", 
+    "type": "user_preferences",
+    "action": "bulk_update",
+    "target": "enterprise_user_001",
+    "affected_keys": [
+      "intent_system:user_profile:enterprise_user_001"
+    ],
+    "timestamp": "2024-01-20T10:15:00Z",
+    "operator_id": "manager_001",
+    "reason": "更新差旅政策偏好"
   }
 ]
 ```
 
-### 10.2 缓存失效标记
-**Key**: `cache_invalidation:intent_config`
-**TTL**: 60秒
-**数据结构**: Set
-```
-{
-  "book_flight",
-  "check_balance"
-}
-```
+## 12. 企业级特有缓存
 
-## 11. 性能监控缓存
-
-### 11.1 API性能统计
-**Key**: `performance:api:book_flight_api`
-**TTL**: 3600秒
-**数据结构**: Hash
-```json
-{
-  "total_calls": 156,
-  "success_calls": 152,
-  "failed_calls": 4,
-  "avg_response_time": 450.5,
-  "max_response_time": 1200,
-  "min_response_time": 180,
-  "last_call_at": "2024-12-01T10:05:00Z",
-  "error_rate": 0.026
-}
-```
-
-### 11.2 用户行为统计
-**Key**: `stats:user_behavior:daily:20241201`
-**TTL**: 86400秒
-**数据结构**: Hash
-```json
-{
-  "total_sessions": 1250,
-  "total_conversations": 3800,
-  "intent_distribution": {
-    "book_flight": 850,
-    "check_balance": 600,
-    "book_hotel": 350
-  },
-  "avg_conversation_length": 3.2,
-  "completion_rate": 0.85,
-  "ambiguity_rate": 0.12,
-  "fallback_rate": 0.08
-}
-```
-
-## 12. Prompt模板配置缓存
-
-### 12.1 意图识别模板
-**Key**: `template_config:intent_recognition:1`
-**TTL**: 3600秒
-**数据结构**: Hash
-```json
-{
-  "template_id": 1,
-  "template_name": "book_flight_intent_recognition",
-  "template_type": "intent_recognition",
-  "intent_id": 1,
-  "template_content": "根据用户输入识别是否为机票预订意图:\n用户输入: {user_input}\n上下文: {context}\n请判断意图并返回JSON格式结果: {\"intent\": \"intent_name\", \"confidence\": 0.95}",
-  "variables": ["user_input", "context"],
-  "version": "1.0",
-  "is_active": true,
-  "created_at": "2024-12-01T10:00:00Z",
-  "updated_at": "2024-12-01T10:00:00Z"
-}
-```
-
-### 12.2 槽位提取模板
-**Key**: `template_config:slot_extraction:1`
-**TTL**: 3600秒
-**数据结构**: Hash
-```json
-{
-  "template_id": 2,
-  "template_name": "flight_slot_extraction",
-  "template_type": "slot_extraction",
-  "intent_id": 1,
-  "template_content": "从用户输入中提取机票预订相关槽位:\n用户输入: {user_input}\n需要提取的槽位: {slot_definitions}\n请返回JSON格式结果: {\"slots\": {\"departure_city\": \"北京\", \"arrival_city\": \"上海\"}}",
-  "variables": ["user_input", "slot_definitions"],
-  "version": "1.1",
-  "is_active": true,
-  "created_at": "2024-12-01T10:00:00Z",
-  "updated_at": "2024-12-01T12:00:00Z"
-}
-```
-
-### 12.3 歧义澄清模板
-**Key**: `template_config:disambiguation:global`
-**TTL**: 3600秒
-**数据结构**: Hash
-```json
-{
-  "template_id": 3,
-  "template_name": "global_disambiguation",
-  "template_type": "disambiguation",
-  "intent_id": null,
-  "template_content": "用户输入存在歧义，请选择您的意图:\n{ambiguous_options}\n请回复数字选择或直接描述您的需求",
-  "variables": ["ambiguous_options"],
-  "version": "1.0",
-  "is_active": true,
-  "created_at": "2024-12-01T10:00:00Z",
-  "updated_at": "2024-12-01T10:00:00Z"
-}
-```
-
-## 13. 安全配置缓存
-
-### 13.1 系统安全配置
-**Key**: `security_config:system`
-**TTL**: 7200秒
-**数据结构**: Hash
-```json
-{
-  "jwt_expiry_hours": 24,
-  "max_retry_times": 3,
-  "rate_limit_per_minute": 100,
-  "session_timeout_minutes": 30,
-  "enable_ip_whitelist": true,
-  "allowed_ips": ["192.168.1.0/24", "10.0.0.0/8"],
-  "encryption_key": "encrypted_key_hash",
-  "audit_log_enabled": true,
-  "security_level": "high",
-  "updated_at": "2024-12-01T10:00:00Z"
-}
-```
-
-### 13.2 用户权限缓存
-**Key**: `security_config:user_permissions:admin123`
-**TTL**: 3600秒
-**数据结构**: Hash
-```json
-{
-  "user_id": "admin123",
-  "role": "admin",
-  "permissions": [
-    "intent.create",
-    "intent.read",
-    "intent.update",
-    "intent.delete",
-    "template.create",
-    "template.read",
-    "template.update",
-    "template.delete",
-    "system.monitor",
-    "audit.read"
-  ],
-  "ip_restrictions": ["192.168.1.0/24"],
-  "session_limit": 5,
-  "expires_at": "2024-12-02T10:00:00Z"
-}
-```
-
-## 14. 审计日志缓存
-
-### 14.1 最近操作日志
-**Key**: `audit_log:recent:admin123`
-**TTL**: 900秒
-**数据结构**: List
-```json
-[
-  {
-    "log_id": "log_20241201_001",
-    "user_id": "admin123",
-    "operation": "update",
-    "resource_type": "intent",
-    "resource_id": "1",
-    "old_value": {"confidence_threshold": 0.8},
-    "new_value": {"confidence_threshold": 0.85},
-    "timestamp": "2024-12-01T10:00:00Z",
-    "ip_address": "192.168.1.100",
-    "user_agent": "Mozilla/5.0...",
-    "status": "success"
-  },
-  {
-    "log_id": "log_20241201_002",
-    "user_id": "admin123",
-    "operation": "create",
-    "resource_type": "template",
-    "resource_id": "3",
-    "old_value": null,
-    "new_value": {"template_name": "new_disambiguation"},
-    "timestamp": "2024-12-01T10:05:00Z",
-    "ip_address": "192.168.1.100",
-    "user_agent": "Mozilla/5.0...",
-    "status": "success"
-  }
-]
-```
-
-## 15. RAGFLOW状态缓存
-
-### 15.1 RAGFLOW健康状态
-**Key**: `ragflow_status:health`
-**TTL**: 300秒
-**数据结构**: Hash
-```json
-{
-  "service_status": "active",
-  "last_health_check": "2024-12-01T10:05:00Z",
-  "response_time_ms": 150,
-  "success_rate_24h": 0.98,
-  "error_count_1h": 2,
-  "consecutive_failures": 0,
-  "next_check_at": "2024-12-01T10:10:00Z",
-  "endpoints": {
-    "chat": {
-      "status": "healthy",
-      "last_check": "2024-12-01T10:05:00Z",
-      "response_time_ms": 145
-    },
-    "health": {
-      "status": "healthy",
-      "last_check": "2024-12-01T10:05:00Z",
-      "response_time_ms": 25
-    }
-  }
-}
-```
-
-### 15.2 RAGFLOW调用结果缓存
-**Key**: `ragflow_result:hash_of_input`
-**TTL**: 600秒
-**数据结构**: Hash
-```json
-{
-  "input_text": "今天天气真好啊",
-  "input_hash": "xyz789abc123",
-  "ragflow_response": "是的，今天确实是个好天气！不过我们还是回到刚才的话题吧，您需要什么帮助？",
-  "response_type": "small_talk_with_context_return",
-  "processing_time_ms": 180,
-  "confidence": 0.92,
-  "cached_at": "2024-12-01T10:05:00Z",
-  "context_maintained": true,
-  "fallback_used": false
-}
-```
-
-### 15.3 RAGFLOW频率限制状态
-**Key**: `ragflow_rate_limit:user123`
-**TTL**: 60秒
-**数据结构**: Hash
-```json
-{
-  "requests_this_minute": 12,
-  "requests_this_hour": 145,
-  "last_request_at": "2024-12-01T10:05:00Z",
-  "rate_limit_hit": false,
-  "reset_time_minute": "2024-12-01T10:06:00Z",
-  "reset_time_hour": "2024-12-01T11:00:00Z"
-}
-```
-
-## 16. 异步任务缓存
-
-### 16.1 异步任务状态
-**Key**: `async_task:task_20241201_001`
-**TTL**: 3600秒
-**数据结构**: Hash
-```json
-{
-  "task_id": "task_20241201_001",
-  "task_type": "api_call",
-  "status": "processing",
-  "conversation_id": 12345,
-  "user_id": "user123",
-  "request_data": {
-    "function_name": "book_flight_api",
-    "params": {
-      "departure_city": "北京",
-      "arrival_city": "上海",
-      "departure_date": "2024-12-02"
-    }
-  },
-  "progress": 65.5,
-  "estimated_completion": "2024-12-01T10:08:00Z",
-  "created_at": "2024-12-01T10:05:00Z",
-  "updated_at": "2024-12-01T10:06:30Z",
-  "retry_count": 0,
-  "max_retries": 3
-}
-```
-
-### 16.2 用户异步任务队列
-**Key**: `async_tasks:user123`
-**TTL**: 86400秒
-**数据结构**: List
-```json
-[
-  {
-    "task_id": "task_20241201_001",
-    "task_type": "api_call",
-    "status": "processing",
-    "created_at": "2024-12-01T10:05:00Z",
-    "priority": "normal"
-  },
-  {
-    "task_id": "task_20241201_002",
-    "task_type": "ragflow_call",
-    "status": "pending",
-    "created_at": "2024-12-01T10:06:00Z",
-    "priority": "low"
-  }
-]
-```
-
-### 16.3 异步任务结果
-**Key**: `async_result:task_20241201_001`
+### 12.1 企业用户管理
+**Key**: `intent_system:enterprise:users:active`
 **TTL**: 1800秒
-**数据结构**: Hash
+**数据结构**: JSON
+
 ```json
 {
-  "task_id": "task_20241201_001",
-  "status": "completed",
-  "result_data": {
-    "success": true,
-    "order_id": "FL202412010001",
-    "flight_number": "CA1234",
-    "price": 580.00,
-    "message": "机票预订成功！"
+  "total_users": 156,
+  "active_sessions": 89,
+  "users_by_department": {
+    "sales": 45,
+    "marketing": 28,
+    "finance": 16,
+    "hr": 12,
+    "it": 8
   },
-  "processing_time_ms": 2400,
-  "completed_at": "2024-12-01T10:07:24Z",
-  "notification_sent": true
+  "users_by_level": {
+    "junior": 67,
+    "senior": 54,
+    "manager": 25,
+    "director": 10
+  },
+  "activity_summary": {
+    "intent_distribution": {
+      "booking_flight": 245,
+      "booking_hotel": 123,
+      "expense_report": 89,
+      "check_balance": 67
+    },
+    "peak_hours": ["09:00-12:00", "14:00-17:00"],
+    "average_session_duration_minutes": 12.5
+  },
+  "last_updated": "2024-01-20T10:30:00Z"
 }
 ```
 
-## 17. 性能优化缓存
+### 12.2 成本中心统计
+**Key**: `intent_system:cost_center:CC1001:daily:20240120`
+**TTL**: 86400秒
+**数据结构**: JSON
 
-### 17.1 系统性能指标
-**Key**: `performance:system:realtime`
-**TTL**: 60秒
-**数据结构**: Hash
 ```json
 {
-  "cpu_usage": 65.4,
-  "memory_usage": 78.2,
-  "active_connections": 234,
-  "requests_per_second": 45.6,
-  "average_response_time": 180.5,
-  "cache_hit_rate": 0.89,
-  "database_connections": 12,
-  "ragflow_availability": 0.98,
-  "async_queue_size": 8,
-  "error_rate_5min": 0.02,
-  "last_updated": "2024-12-01T10:06:00Z"
+  "cost_center": "CC1001",
+  "date": "2024-01-20",
+  "department": "sales",
+  "manager": "manager_001",
+  "statistics": {
+    "total_bookings": 15,
+    "total_amount": 8750.00,
+    "currency": "CNY",
+    "booking_types": {
+      "flight": 8,
+      "hotel": 5,
+      "train": 2
+    },
+    "approval_status": {
+      "auto_approved": 10,
+      "pending_approval": 3,
+      "approved": 2,
+      "rejected": 0
+    },
+    "average_booking_amount": 583.33
+  },
+  "top_users": [
+    {
+      "user_id": "enterprise_user_001",
+      "bookings": 3,
+      "amount": 1740.00
+    },
+    {
+      "user_id": "enterprise_user_002", 
+      "bookings": 2,
+      "amount": 1160.00
+    }
+  ],
+  "generated_at": "2024-01-20T23:59:59Z"
 }
 ```
 
-### 17.2 缓存性能统计
-**Key**: `performance:cache:stats`
+## 13. 缓存性能优化
+
+### 13.1 缓存命中率统计
+**Key**: `intent_system:cache:performance:hourly`
+**TTL**: 3600秒
+**数据结构**: JSON
+
+```json
+{
+  "hour": "2024-01-20T10:00:00Z",
+  "cache_statistics": {
+    "total_requests": 15420,
+    "cache_hits": 13724,
+    "cache_misses": 1696,
+    "hit_rate": 0.89,
+    "avg_hit_response_time_ms": 2.3,
+    "avg_miss_response_time_ms": 25.7
+  },
+  "key_type_performance": {
+    "session": {
+      "requests": 5680,
+      "hits": 4912,
+      "hit_rate": 0.86
+    },
+    "intent_recognition": {
+      "requests": 3240,
+      "hits": 2916,
+      "hit_rate": 0.90
+    },
+    "user_profile": {
+      "requests": 2150,
+      "hits": 2021,
+      "hit_rate": 0.94
+    },
+    "intent_config": {
+      "requests": 1890,
+      "hits": 1832,
+      "hit_rate": 0.97
+    }
+  },
+  "memory_usage": {
+    "total_keys": 125680,
+    "memory_usage_mb": 456.7,
+    "expired_keys": 245,
+    "evicted_keys": 12
+  }
+}
+```
+
+## 14. v2.2新增模型缓存
+
+### 14.1 槽位值缓存 (基于slot_values表)
+**Key**: `intent_system:slot_values:conv_123`
+**TTL**: 3600秒
+**数据结构**: JSON
+
+```json
+{
+  "conversation_id": 123,
+  "slot_values": [
+    {
+      "id": 456,
+      "slot_id": 12,
+      "slot_name": "departure_city",
+      "original_text": "我想从北京出发",
+      "extracted_value": "北京",
+      "normalized_value": "北京市",
+      "confidence": 0.95,
+      "extraction_method": "entity_recognition",
+      "validation_status": "valid",
+      "is_confirmed": true,
+      "created_at": "2024-01-20T10:30:00Z"
+    }
+  ],
+  "filled_count": 3,
+  "missing_count": 1
+}
+```
+
+### 14.2 实体词典缓存 (基于entity_dictionary表)
+**Key**: `intent_system:entity_dict:city`
+**TTL**: 7200秒
+**数据结构**: JSON
+
+```json
+{
+  "entity_type_code": "city",
+  "entities": {
+    "北京": {
+      "id": 101,
+      "entity_value": "北京",
+      "canonical_form": "北京市",
+      "aliases": ["北京", "京城", "首都", "BJ"],
+      "confidence_weight": 1.0,
+      "metadata": {"province": "北京市", "code": "BJ"},
+      "frequency_count": 1250
+    },
+    "shanghai": {
+      "id": 102,
+      "entity_value": "上海",
+      "canonical_form": "上海市", 
+      "aliases": ["上海", "魔都", "SH"],
+      "confidence_weight": 1.0,
+      "metadata": {"province": "上海市", "code": "SH"}
+    }
+  },
+  "total_entities": 50,
+  "last_updated": "2024-01-20T08:00:00Z"
+}
+```
+
+### 14.3 响应类型定义缓存 (基于response_types表)
+**Key**: `intent_system:response_types:success`
+**TTL**: 3600秒
+**数据结构**: JSON
+
+```json
+{
+  "category": "success",
+  "response_types": [
+    {
+      "id": 1,
+      "type_code": "api_result",
+      "type_name": "API调用结果",
+      "description": "API调用成功返回的结果",
+      "template_format": "json",
+      "default_template": "操作成功完成：${result}",
+      "metadata": {"auto_close": true, "success_tone": "professional"}
+    },
+    {
+      "id": 2,
+      "type_code": "task_completion",
+      "type_name": "任务完成",
+      "description": "意图处理完成",
+      "template_format": "text",
+      "default_template": "任务已完成，订单号：${order_id}"
+    }
+  ]
+}
+```
+
+### 14.4 对话状态缓存 (基于conversation_statuses表)
+**Key**: `intent_system:conv_statuses:all`
+**TTL**: 3600秒
+**数据结构**: JSON
+
+```json
+{
+  "statuses": [
+    {
+      "id": 1,
+      "status_code": "completed",
+      "status_name": "已完成",
+      "description": "对话成功完成",
+      "category": "success",
+      "is_final": true,
+      "next_allowed_statuses": [],
+      "notification_required": false
+    },
+    {
+      "id": 2,
+      "status_code": "slot_filling",
+      "status_name": "槽位填充中",
+      "description": "正在进行槽位填充",
+      "category": "processing",
+      "is_final": false,
+      "next_allowed_statuses": ["completed", "validation_error", "cancelled"],
+      "notification_required": false
+    }
+  ],
+  "by_category": {
+    "success": ["completed", "ragflow_handled"],
+    "processing": ["slot_filling", "ambiguous"],
+    "error": ["api_error", "validation_error"]
+  }
+}
+```
+
+## 15. v2.2缓存失效机制
+
+### 15.1 应用层事件驱动失效
+```python
+# v2.2: 替代数据库触发器的应用层失效机制
+def publish_cache_invalidation_event(table_name: str, record_id: int, operation: str, data: dict):
+    """发布缓存失效事件"""
+    event = {
+        "event_type": "cache_invalidation",
+        "table_name": table_name,
+        "record_id": record_id,
+        "operation": operation,  # INSERT, UPDATE, DELETE
+        "data": data,
+        "timestamp": datetime.utcnow().isoformat(),
+        "invalidation_id": generate_uuid()
+    }
+    
+    # 发布到消息队列或事件系统
+    event_system.publish("cache.invalidation", event)
+    
+    # 记录到cache_invalidation_logs表
+    record_invalidation_log(event)
+
+# 消费者处理失效事件
+def handle_invalidation_event(event):
+    """处理缓存失效事件"""
+    invalidation_service.process_event(event)
+```
+
+### 15.2 异步日志缓存
+**Key**: `intent_system:async_log_status:api_call`
 **TTL**: 300秒
-**数据结构**: Hash
+**数据结构**: JSON
+
 ```json
 {
-  "total_requests": 15420,
-  "cache_hits": 13724,
-  "cache_misses": 1696,
-  "hit_rate": 0.89,
-  "avg_hit_time_ms": 2.3,
-  "avg_miss_time_ms": 25.7,
-  "expired_keys": 245,
-  "evicted_keys": 12,
-  "memory_usage_mb": 256.7,
-  "last_reset": "2024-12-01T09:00:00Z"
+  "log_type": "api_call",
+  "queue_status": {
+    "pending_count": 25,
+    "processing_count": 3,
+    "completed_count": 1247,
+    "failed_count": 2
+  },
+  "performance": {
+    "avg_processing_time_ms": 45,
+    "throughput_per_minute": 85
+  },
+  "last_processed_at": "2024-01-20T10:29:45Z"
 }
 ```
+
+这个v2.2更新文档展示了：
+
+1. **v2.2架构优化** - 数据结构规范化、应用层逻辑分离
+2. **新增模型支持** - 槽位值、实体词典、响应类型等新模型的缓存策略
+3. **事件驱动失效** - 替代数据库触发器的应用层缓存失效机制
+4. **异步处理缓存** - 支持async_log_queue和cache_invalidation_logs的缓存管理
+5. **B2B企业特性** - 完整支持企业级数据结构和业务流程
+
+所有示例都基于MySQL Schema v2.2的最新架构设计！

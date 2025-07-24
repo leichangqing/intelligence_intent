@@ -11,6 +11,7 @@ import hashlib
 from datetime import datetime, timedelta
 
 from src.config.settings import settings
+from src.core.cache_strategy import get_cache_strategy, UnifiedCacheStrategy
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -23,6 +24,29 @@ class CacheService:
         self.redis_client: Optional[redis.Redis] = None
         self.connection_pool: Optional[ConnectionPool] = None
         self._initialized = False
+        self.default_namespace = "intent_system"
+        
+        # 使用统一的缓存策略
+        self.cache_strategy = get_cache_strategy()
+        
+        # 保持向后兼容的模板字典（废弃，将逐步移除）
+        self.CACHE_KEY_TEMPLATES = {
+            template_name: template_info["pattern"] 
+            for template_name, template_info in self.cache_strategy.list_all_templates().items()
+        }
+    
+    def get_cache_key(self, template_name: str, **kwargs) -> str:
+        """
+        生成统一格式的缓存键
+        
+        Args:
+            template_name: 模板名称
+            **kwargs: 模板参数
+            
+        Returns:
+            str: 格式化的缓存键
+        """
+        return self.cache_strategy.get_cache_key(template_name, **kwargs)
     
     async def initialize(self):
         """初始化Redis连接"""
@@ -71,31 +95,38 @@ class CacheService:
         """生成带命名空间的缓存键"""
         return f"{namespace}:{key}"
     
-    def _serialize_data(self, data: Any) -> bytes:
+    def _serialize_data(self, data: Any, method=None) -> bytes:
         """序列化数据"""
         try:
-            if isinstance(data, (str, int, float, bool)):
-                # 简单类型直接使用JSON
-                return json.dumps(data).encode('utf-8')
+            if method is None:
+                # 兼容性默认行为
+                if isinstance(data, (str, int, float, bool)):
+                    return json.dumps(data).encode('utf-8')
+                else:
+                    return pickle.dumps(data)
             else:
-                # 复杂类型使用pickle
-                return pickle.dumps(data)
+                # 使用统一的序列化策略
+                result = self.cache_strategy.serialize_data(data, method)
+                return result.encode('utf-8') if isinstance(result, str) else result
         except Exception as e:
             logger.warning(f"数据序列化失败: {str(e)}")
             return pickle.dumps(data)
     
-    def _deserialize_data(self, data: bytes) -> Any:
+    def _deserialize_data(self, data: bytes, method=None) -> Any:
         """反序列化数据"""
         try:
-            # 首先尝试JSON反序列化
-            return json.loads(data.decode('utf-8'))
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            try:
-                # 如果JSON失败，尝试pickle
-                return pickle.loads(data)
-            except Exception as e:
-                logger.warning(f"数据反序列化失败: {str(e)}")
-                return None
+            if method is None:
+                # 兼容性默认行为
+                try:
+                    return json.loads(data.decode('utf-8'))
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    return pickle.loads(data)
+            else:
+                # 使用统一的反序列化策略
+                return self.cache_strategy.deserialize_data(data, method)
+        except Exception as e:
+            logger.warning(f"数据反序列化失败: {str(e)}")
+            return None
     
     async def set(self, key: str, value: Any, ttl: Optional[int] = None, 
                   namespace: str = "intent_system") -> bool:
@@ -433,8 +464,9 @@ class CacheService:
         Returns:
             bool: 是否缓存成功
         """
-        cache_key = f"intent_config:{intent_name}"
-        return await self.set(cache_key, config_data, ttl=settings.CACHE_TTL_CONFIG)
+        cache_key = self.get_cache_key("intent_config", intent_name=intent_name)
+        ttl = self.cache_strategy.get_ttl("intent_config")
+        return await self.set(cache_key, config_data, ttl=ttl)
     
     async def get_intent_config(self, intent_name: str) -> Optional[Dict]:
         """
@@ -446,34 +478,37 @@ class CacheService:
         Returns:
             Dict: 配置数据
         """
-        cache_key = f"intent_config:{intent_name}"
+        cache_key = self.get_cache_key("intent_config", intent_name=intent_name)
         return await self.get(cache_key)
     
-    async def cache_nlu_result(self, input_hash: str, result_data: Dict) -> bool:
+    async def cache_nlu_result(self, input_hash: str, result_data: Dict, user_id: str = "") -> bool:
         """
         缓存NLU识别结果
         
         Args:
             input_hash: 输入文本的哈希值
             result_data: 识别结果
+            user_id: 用户ID（可选）
             
         Returns:
             bool: 是否缓存成功
         """
-        cache_key = f"nlu_result:{input_hash}"
-        return await self.set(cache_key, result_data, ttl=settings.CACHE_TTL_NLU)
+        cache_key = self.get_cache_key("intent_recognition", input_hash=input_hash, user_id=user_id or "anonymous")
+        ttl = self.cache_strategy.get_ttl("intent_recognition")
+        return await self.set(cache_key, result_data, ttl=ttl)
     
-    async def get_nlu_result(self, input_hash: str) -> Optional[Dict]:
+    async def get_nlu_result(self, input_hash: str, user_id: str = "") -> Optional[Dict]:
         """
         获取NLU识别结果缓存
         
         Args:
             input_hash: 输入文本的哈希值
+            user_id: 用户ID（可选）
             
         Returns:
             Dict: 识别结果
         """
-        cache_key = f"nlu_result:{input_hash}"
+        cache_key = self.get_cache_key("intent_recognition", input_hash=input_hash, user_id=user_id or "anonymous")
         return await self.get(cache_key)
     
     async def cache_session_context(self, session_id: str, context_data: Dict) -> bool:
@@ -487,8 +522,9 @@ class CacheService:
         Returns:
             bool: 是否缓存成功
         """
-        cache_key = f"session_context:{session_id}"
-        return await self.set(cache_key, context_data, ttl=settings.CACHE_TTL_SESSION)
+        cache_key = self.get_cache_key("session_context", session_id=session_id)
+        ttl = self.cache_strategy.get_ttl("session_context")
+        return await self.set(cache_key, context_data, ttl=ttl)
     
     async def get_session_context(self, session_id: str) -> Optional[Dict]:
         """
@@ -500,7 +536,7 @@ class CacheService:
         Returns:
             Dict: 上下文数据
         """
-        cache_key = f"session_context:{session_id}"
+        cache_key = self.get_cache_key("session_context", session_id=session_id)
         return await self.get(cache_key)
     
     async def get_cache_stats(self) -> Dict[str, Any]:
@@ -567,9 +603,95 @@ class CacheService:
         Returns:
             str: 哈希值
         """
-        # 生成输入文本的MD5哈希
-        content = f"{user_input}:{user_id}".encode('utf-8')
-        return hashlib.md5(content).hexdigest()
+        return self.cache_strategy.generate_hash(user_input, user_id)
+    
+    async def cache_conversation_history(self, session_id: str, history_data: List[Dict], limit: int = 50) -> bool:
+        """
+        缓存对话历史
+        
+        Args:
+            session_id: 会话ID
+            history_data: 历史对话数据
+            limit: 历史记录限制数
+            
+        Returns:
+            bool: 是否缓存成功
+        """
+        cache_key = self.get_cache_key("conversation_history", session_id=session_id, limit=limit)
+        ttl = self.cache_strategy.get_ttl("conversation_history")
+        return await self.set(cache_key, history_data, ttl=ttl)
+    
+    async def get_conversation_history(self, session_id: str, limit: int = 50) -> Optional[List[Dict]]:
+        """
+        获取对话历史缓存
+        
+        Args:
+            session_id: 会话ID
+            limit: 历史记录限制数
+            
+        Returns:
+            List[Dict]: 历史对话数据
+        """
+        cache_key = self.get_cache_key("conversation_history", session_id=session_id, limit=limit)
+        return await self.get(cache_key)
+    
+    async def cache_slot_values(self, session_id: str, intent_name: str, slot_values: Dict) -> bool:
+        """
+        缓存会话槽位值
+        
+        Args:
+            session_id: 会话ID
+            intent_name: 意图名称
+            slot_values: 槽位值数据
+            
+        Returns:
+            bool: 是否缓存成功
+        """
+        cache_key = self.get_cache_key("slot_values", session_id=session_id, intent_name=intent_name)
+        ttl = self.cache_strategy.get_ttl("slot_values")
+        return await self.set(cache_key, slot_values, ttl=ttl)
+    
+    async def get_slot_values(self, session_id: str, intent_name: str) -> Optional[Dict]:
+        """
+        获取会话槽位值缓存
+        
+        Args:
+            session_id: 会话ID
+            intent_name: 意图名称
+            
+        Returns:
+            Dict: 槽位值数据
+        """
+        cache_key = self.get_cache_key("slot_values", session_id=session_id, intent_name=intent_name)
+        return await self.get(cache_key)
+    
+    async def cache_user_profile(self, user_id: str, profile_data: Dict) -> bool:
+        """
+        缓存用户配置文件
+        
+        Args:
+            user_id: 用户ID
+            profile_data: 用户配置数据
+            
+        Returns:
+            bool: 是否缓存成功
+        """
+        cache_key = self.get_cache_key("user_profile", user_id=user_id)
+        ttl = self.cache_strategy.get_ttl("user_profile")
+        return await self.set(cache_key, profile_data, ttl=ttl)
+    
+    async def get_user_profile(self, user_id: str) -> Optional[Dict]:
+        """
+        获取用户配置文件缓存
+        
+        Args:
+            user_id: 用户ID
+            
+        Returns:
+            Dict: 用户配置数据
+        """
+        cache_key = self.get_cache_key("user_profile", user_id=user_id)
+        return await self.get(cache_key)
 
 
 # 全局缓存服务实例

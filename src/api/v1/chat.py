@@ -6,9 +6,10 @@ from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
 from fastapi.responses import JSONResponse
 import time
 import uuid
+import json
 
 from src.schemas.chat import (
-    ChatRequest, ChatResponse, ChatInteractRequest, 
+    ChatRequest, ChatResponse, SessionMetadata,
     DisambiguationRequest, DisambiguationResponse
 )
 from src.schemas.common import StandardResponse
@@ -20,6 +21,7 @@ from src.services.ragflow_service import RagflowService
 from src.services.cache_service import CacheService
 from src.api.dependencies import get_intent_service, get_conversation_service
 from src.utils.logger import get_logger
+from src.utils.response_transformer import get_response_transformer, ResponseType
 #from src.utils.security import verify_token
 from src.models.conversation import Conversation, IntentAmbiguity
 
@@ -29,7 +31,7 @@ router = APIRouter(prefix="/chat", tags=["对话接口"])
 
 @router.post("/interact", response_model=StandardResponse[ChatResponse])
 async def chat_interact(
-    request: ChatInteractRequest,
+    request: ChatRequest,
     background_tasks: BackgroundTasks,
     intent_service: IntentService = Depends(get_intent_service),
     conversation_service: ConversationService = Depends(get_conversation_service)
@@ -37,12 +39,14 @@ async def chat_interact(
     """
     智能对话处理接口
     
-    实现无状态B2B设计的核心对话处理逻辑：
-    1. 意图识别和置信度评估
-    2. 槽位提取和验证
-    3. 意图转移和打岔处理
-    4. 条件式API调用
-    5. RAGFLOW集成
+    实现混合架构设计的核心对话处理逻辑：
+    1. 查询会话历史对话和槽位状态
+    2. 基于历史上下文的意图识别和置信度评估
+    3. 多轮对话的槽位累积和验证
+    4. 意图转移和打岔处理
+    5. 条件式API调用
+    6. RAGFLOW集成
+    7. 对话状态持久化
     """
     start_time = time.time()
     request_id = f"req_{int(time.time())}_{uuid.uuid4().hex[:8]}"
@@ -53,17 +57,32 @@ async def chat_interact(
         # 1. 输入安全校验和预处理
         sanitized_input = await _sanitize_user_input(request.input)
         
-        # 2. 检查用户会话状态和上下文
-        session_context = await conversation_service.get_or_create_session_context(
-            request.user_id, request.context
+        # 2. 获取或创建会话，并加载历史对话上下文
+        session_context = await conversation_service.get_or_create_session(
+            request.user_id, session_id=request.session_id, context=request.context
         )
         
-        # 3. 意图识别
-        intent_result = await intent_service.recognize_intent(
-            sanitized_input, request.user_id, session_context
+        # 3. 加载历史对话和当前槽位状态（关键改进）
+        conversation_history = await conversation_service.get_conversation_history(
+            session_context['session_id'], limit=10  # 获取最近10轮对话
         )
         
-        # 4. 处理不同的意图识别结果
+        current_slot_values = await conversation_service.get_current_slot_values(
+            session_context['session_id']
+        )
+        
+        # 4. 计算当前对话轮次
+        current_turn = len(conversation_history) + 1
+        session_context['current_turn'] = current_turn
+        session_context['conversation_history'] = conversation_history
+        session_context['current_slots'] = current_slot_values
+        
+        # 5. 多轮对话的意图识别（基于历史上下文）
+        intent_result = await intent_service.recognize_intent_with_history(
+            sanitized_input, request.user_id, session_context, conversation_history
+        )
+        
+        # 6. 处理不同的意图识别结果
         if intent_result.is_ambiguous:
             # 处理意图歧义
             response = await _handle_intent_ambiguity(
@@ -81,21 +100,17 @@ async def chat_interact(
                 intent_service, conversation_service
             )
         
-        # 5. 记录对话历史
+        # 7. 记录对话历史（包含轮次信息）
         processing_time = int((time.time() - start_time) * 1000)
         background_tasks.add_task(
             _save_conversation_record,
             request.user_id, session_context['session_id'], sanitized_input,
-            intent_result, response, processing_time, request_id
+            intent_result, response, processing_time, request_id, current_turn
         )
         
-        # 6. 构建标准响应
-        return StandardResponse(
-            success=True,
-            data=response,
-            message="处理成功",
-            request_id=request_id
-        )
+        # 6. 构建标准响应 - 使用统一转换器
+        transformer = get_response_transformer()
+        return transformer.chat_to_standard(response, request_id)
         
     except Exception as e:
         logger.error(f"对话处理失败: {request_id}, 错误: {str(e)}")
@@ -106,9 +121,11 @@ async def chat_interact(
             request.user_id, request.input, str(e), request_id
         )
         
-        return StandardResponse(
-            success=False,
-            message="服务暂时不可用，请稍后重试",
+        # 使用统一转换器处理错误响应
+        transformer = get_response_transformer()
+        return transformer.error_to_standard(
+            "服务暂时不可用，请稍后重试",
+            "SERVICE_UNAVAILABLE",
             request_id=request_id
         )
 
@@ -158,22 +175,21 @@ async def _handle_intent_ambiguity(intent_result, user_input: str,
         ChatResponse: 歧义处理响应
     """
     # 生成歧义澄清问题
-    disambiguation_question = await conversation_service.generate_disambiguation_question(
-        intent_result.alternatives
-    )
+    candidates_list = [f"{i+1}. {alt.display_name}" for i, alt in enumerate(intent_result.alternatives)]
+    disambiguation_question = f"您是想要：\n" + "\n".join(candidates_list) + "\n\n请输入对应的数字或者重新描述您的需求。"
     
-    # 创建临时对话记录用于跟踪歧义
-    conversation_id = await conversation_service.create_temporary_conversation(
-        session_context['session_id'], session_context['user_id'], user_input
-    )
-    
-    # 保存歧义记录
-    await conversation_service.save_ambiguity_record(
-        conversation_id, intent_result.alternatives, disambiguation_question
+    # 记录意图歧义
+    await conversation_service.record_intent_ambiguity(
+        session_context['session_id'], user_input, [
+            {'intent_name': alt.intent_name, 'display_name': alt.display_name, 'confidence': alt.confidence}
+            for alt in intent_result.alternatives
+        ]
     )
     
     return ChatResponse(
         response=disambiguation_question,
+        session_id=session_context['session_id'],
+        conversation_turn=session_context.get('current_turn', 1),
         intent=None,
         confidence=0.0,
         slots={},
@@ -181,7 +197,10 @@ async def _handle_intent_ambiguity(intent_result, user_input: str,
         response_type="disambiguation",
         next_action="user_choice",
         ambiguous_intents=intent_result.alternatives,
-        message_type="ambiguous_intent"
+        session_metadata=SessionMetadata(
+            total_turns=session_context.get('current_turn', 1),
+            session_duration_seconds=0
+        )
     )
 
 
@@ -206,6 +225,7 @@ async def _handle_non_intent_input(user_input: str, session_context: Dict,
         
         return ChatResponse(
             response=ragflow_response.get('answer', '抱歉，我暂时无法理解您的问题。'),
+            session_id=session_context['session_id'],
             intent=None,
             confidence=0.0,
             slots={},
@@ -226,6 +246,7 @@ async def _handle_non_intent_input(user_input: str, session_context: Dict,
         
         return ChatResponse(
             response=fallback_response,
+            session_id=session_context['session_id'],
             intent=None,
             confidence=0.0,
             slots={},
@@ -257,27 +278,21 @@ async def _handle_clear_intent(intent_result, user_input: str, session_context: 
     # 检查是否存在意图转移
     current_intent = session_context.get('current_intent')
     if current_intent and current_intent != intent.intent_name:
-        is_transfer, transfer_intent, transfer_confidence = await intent_service.detect_intent_transfer(
-            current_intent, user_input, session_context
+        # 记录意图转移
+        await conversation_service.record_intent_transfer(
+            session_context['session_id'], current_intent, intent.intent_name, 
+            "用户主动切换意图"
         )
-        
-        if is_transfer:
-            # 处理意图转移
-            await conversation_service.handle_intent_transfer(
-                session_context, current_intent, intent.intent_name
-            )
     
-    # 获取槽位服务
-    from src.api.dependencies import get_slot_service
-    slot_service = await get_slot_service()
+    # V2.2重构: 使用当前会话的槽位状态（已在主流程中查询）
+    inherited_slots = session_context.get('current_slots', {})
     
-    # 继承历史槽位值
-    inherited_slots = await slot_service.inherit_slots_from_context(
-        intent, session_context
-    )
+    # V2.2增强：使用统一的槽位数据服务
+    from src.services.enhanced_slot_service import get_enhanced_slot_service
+    enhanced_slot_service = get_enhanced_slot_service()
     
-    # 提取当前输入的槽位
-    slot_result = await slot_service.extract_slots(
+    # 提取当前输入的槽位（使用增强服务，返回统一格式）
+    slot_result = await enhanced_slot_service.extract_slots(
         intent, user_input, inherited_slots, session_context
     )
     
@@ -321,6 +336,7 @@ async def _execute_function_call(intent, slots: Dict, session_context: Dict,
         if function_result.success:
             return ChatResponse(
                 response=function_result.response_message,
+                session_id=session_context['session_id'],
                 intent=intent.intent_name,
                 confidence=0.95,  # 功能执行成功时设置高置信度
                 slots=slots,
@@ -339,6 +355,7 @@ async def _execute_function_call(intent, slots: Dict, session_context: Dict,
             
             return ChatResponse(
                 response=error_response,
+                session_id=session_context['session_id'],
                 intent=intent.intent_name,
                 confidence=0.95,
                 slots=slots,
@@ -353,6 +370,7 @@ async def _execute_function_call(intent, slots: Dict, session_context: Dict,
         
         return ChatResponse(
             response="系统繁忙，请稍后重试。",
+            session_id=session_context['session_id'],
             intent=intent.intent_name,
             confidence=0.95,
             slots=slots,
@@ -377,12 +395,24 @@ async def _generate_slot_prompt(intent, slot_result, session_context: Dict,
     Returns:
         ChatResponse: 槽位询问响应
     """
-    # 获取槽位服务
-    from src.api.dependencies import get_slot_service
-    slot_service = await get_slot_service()
+    # V2.2重构: 保存当前槽位提取结果到slot_values表
+    from src.services.slot_value_service import get_slot_value_service
+    slot_value_service = get_slot_value_service()
+    
+    if slot_result.slots:
+        try:
+            await slot_value_service.update_session_slots(
+                session_context['session_id'], intent.intent_name, slot_result.slots
+            )
+        except Exception as e:
+            logger.warning(f"更新会话槽位失败: {str(e)}")
+    
+    # V2.2增强：使用统一的槽位数据服务
+    from src.services.enhanced_slot_service import get_enhanced_slot_service
+    enhanced_slot_service = get_enhanced_slot_service()
     
     # 生成槽位询问提示
-    prompt_message = await slot_service.generate_slot_prompt(
+    prompt_message = await enhanced_slot_service.generate_slot_prompt(
         intent, slot_result.missing_slots, session_context
     )
     
@@ -397,6 +427,7 @@ async def _generate_slot_prompt(intent, slot_result, session_context: Dict,
     
     return ChatResponse(
         response=prompt_message,
+        session_id=session_context['session_id'],
         intent=intent.intent_name,
         confidence=0.95,
         slots=slot_result.slots,
@@ -467,7 +498,7 @@ async def resolve_disambiguation(
 
 async def _save_conversation_record(user_id: str, session_id: str, user_input: str,
                                   intent_result, response: ChatResponse, 
-                                  processing_time: int, request_id: str):
+                                  processing_time: int, request_id: str, conversation_turn: int):
     """
     保存对话记录（后台任务）
     
@@ -481,19 +512,35 @@ async def _save_conversation_record(user_id: str, session_id: str, user_input: s
         request_id: 请求ID
     """
     try:
+        # V2.2重构: 更新对话记录创建以适配新的字段结构
+        from src.models.conversation import Session
+        session = Session.get(Session.session_id == session_id)
+        
         conversation = Conversation.create(
-            session_id=session_id,
-            user_id=user_id,
+            session=session,
+            user_id=session.user_id,
             user_input=user_input,
-            intent_recognized=intent_result.intent.intent_name if intent_result.intent else None,
+            intent_name=intent_result.intent.intent_name if intent_result.intent else None,
             confidence_score=intent_result.confidence,
-            slots_filled=response.slots,
             system_response=response.response,
             response_type=response.response_type,
             status=response.status,
             processing_time_ms=processing_time,
-            request_id=request_id
+            conversation_turn=conversation_turn
         )
+        
+        # V2.2重构: 如果有槽位信息，保存到slot_values表
+        if response.slots:
+            from src.services.slot_value_service import get_slot_value_service
+            slot_value_service = get_slot_value_service()
+            try:
+                await slot_value_service.save_conversation_slots(
+                    session_id, conversation.id,
+                    intent_result.intent.intent_name if intent_result.intent else None,
+                    response.slots
+                )
+            except Exception as e:
+                logger.warning(f"保存对话槽位失败: {str(e)}")
         
         logger.info(f"对话记录保存成功: {conversation.id}")
         
@@ -507,14 +554,31 @@ async def _save_error_conversation(user_id: str, user_input: str,
     保存错误对话记录（后台任务）
     """
     try:
-        conversation = Conversation.create(
+        # V2.2重构: 为错误对话创建临时会话或使用默认会话
+        from src.models.conversation import Session, User
+        
+        # 尝试获取或创建用户
+        try:
+            user = User.get(User.user_id == user_id)
+        except User.DoesNotExist:
+            user = User.create(user_id=user_id, user_type='individual')
+        
+        # 创建错误会话
+        error_session = Session.create(
             session_id=f"error_{request_id}",
-            user_id=user_id,
+            user_id=user.user_id,  # v2.2修复: 使用user_id字符串而非User对象
+            session_state='error',
+            context=json.dumps({'error': True, 'request_id': request_id})
+        )
+        
+        conversation = Conversation.create(
+            session=error_session,
+            user_id=user.user_id,  # v2.2修复: 使用user_id字符串而非User对象
             user_input=user_input,
             system_response=f"系统错误: {error_message}",
             response_type="system_error",
             status="system_error",
-            request_id=request_id
+            conversation_turn=1
         )
         
         logger.info(f"错误对话记录保存成功: {conversation.id}")

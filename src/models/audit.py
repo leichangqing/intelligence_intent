@@ -2,27 +2,33 @@
 审计日志相关数据模型
 """
 from peewee import *
-from .base import CommonModel
+from playhouse.mysql_ext import JSONField as MySQLJSONField
+from playhouse.mysql_ext import JSONField
+from src.config.database import BaseModel
+from .conversation import User
+from datetime import datetime, timedelta
+from typing import Optional, List, Dict, Any
 import json
 
 
-class ConfigAuditLog(CommonModel):
-    """配置审计日志表"""
+class ConfigAuditLog(BaseModel):
+    """配置审计日志表 - 与MySQL Schema对应"""
     
-    table_name_field = CharField(max_length=50, verbose_name="表名")
-    record_id = IntegerField(verbose_name="记录ID")
-    action = CharField(max_length=20, verbose_name="操作类型")  # INSERT, UPDATE, DELETE
-    old_values = TextField(null=True, verbose_name="修改前的值JSON")
-    new_values = TextField(null=True, verbose_name="修改后的值JSON")
-    operator_id = CharField(max_length=100, verbose_name="操作者ID")
-    operator_name = CharField(max_length=100, null=True, verbose_name="操作者姓名")
-    ip_address = CharField(max_length=45, null=True, verbose_name="操作者IP")
-    user_agent = TextField(null=True, verbose_name="用户代理")
+    id = BigAutoField(primary_key=True)  # BIGINT AUTO_INCREMENT PRIMARY KEY
+    table_name = CharField(max_length=50, verbose_name="表名")  # 数据库字段名是table_name
+    record_id = BigIntegerField(verbose_name="记录ID")  # BIGINT NOT NULL 
+    action = CharField(max_length=20, verbose_name="操作类型",
+                      constraints=[Check("action IN ('INSERT','UPDATE','DELETE')")])  # ENUM
+    old_values = MySQLJSONField(null=True, verbose_name="修改前的值")  # JSON
+    new_values = MySQLJSONField(null=True, verbose_name="修改后的值")  # JSON
+    operator_id = CharField(max_length=100, verbose_name="操作者ID")  # VARCHAR(100) NOT NULL
+    operator_name = CharField(max_length=100, null=True, verbose_name="操作者姓名")  # VARCHAR(100)
+    created_at = DateTimeField(null=True, verbose_name="创建时间")  # TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     
     class Meta:
         table_name = 'config_audit_logs'
         indexes = (
-            (('table_name_field', 'record_id'), False),
+            (('table_name', 'record_id'), False),
             (('operator_id',), False),
             (('action',), False),
             (('created_at',), False),
@@ -31,28 +37,32 @@ class ConfigAuditLog(CommonModel):
     def get_old_values(self) -> dict:
         """获取修改前的值"""
         if self.old_values:
+            if isinstance(self.old_values, dict):
+                return self.old_values
             try:
-                return json.loads(self.old_values)
-            except json.JSONDecodeError:
+                return json.loads(self.old_values) if isinstance(self.old_values, str) else self.old_values
+            except (json.JSONDecodeError, TypeError):
                 return {}
         return {}
     
     def set_old_values(self, values: dict):
         """设置修改前的值"""
-        self.old_values = json.dumps(values, ensure_ascii=False)
+        self.old_values = values  # JSONField可以直接存储dict
     
     def get_new_values(self) -> dict:
         """获取修改后的值"""
         if self.new_values:
+            if isinstance(self.new_values, dict):
+                return self.new_values
             try:
-                return json.loads(self.new_values)
-            except json.JSONDecodeError:
+                return json.loads(self.new_values) if isinstance(self.new_values, str) else self.new_values
+            except (json.JSONDecodeError, TypeError):
                 return {}
         return {}
     
     def set_new_values(self, values: dict):
         """设置修改后的值"""
-        self.new_values = json.dumps(values, ensure_ascii=False)
+        self.new_values = values  # JSONField可以直接存储dict
     
     def get_changes(self) -> dict:
         """获取变更详情"""
@@ -87,22 +97,26 @@ class ConfigAuditLog(CommonModel):
         return self.action == 'DELETE'
     
     def __str__(self):
-        return f"ConfigAuditLog({self.table_name_field}.{self.record_id}: {self.action})"
+        return f"ConfigAuditLog({self.table_name}.{self.record_id}: {self.action})"
 
 
-class SecurityAuditLog(CommonModel):
-    """安全审计日志表"""
+class SecurityAuditLog(BaseModel):
+    """安全审计日志表 - 与MySQL Schema对应"""
     
-    user_id = CharField(max_length=100, null=True, verbose_name="用户ID")
-    ip_address = CharField(max_length=45, null=True, verbose_name="IP地址")
-    user_agent = TextField(null=True, verbose_name="用户代理")
-    action_type = CharField(max_length=50, verbose_name="操作类型")  # login, logout, api_call, security_violation
-    resource_type = CharField(max_length=50, null=True, verbose_name="资源类型")
-    resource_id = CharField(max_length=100, null=True, verbose_name="资源ID")
-    action_details = TextField(null=True, verbose_name="操作详情JSON")
-    risk_level = CharField(max_length=20, default='low', verbose_name="风险等级")  # low, medium, high, critical
-    status = CharField(max_length=20, verbose_name="操作状态")  # success, failure, blocked
-    error_message = TextField(null=True, verbose_name="错误信息")
+    id = BigAutoField(primary_key=True)  # BIGINT AUTO_INCREMENT PRIMARY KEY
+    user_id = CharField(max_length=100, null=True, verbose_name="用户ID")  # VARCHAR(100) COMMENT '用户ID'
+    ip_address = CharField(max_length=45, null=True, verbose_name="IP地址")  # VARCHAR(45) COMMENT 'IP地址'
+    user_agent = TextField(null=True, verbose_name="用户代理")  # TEXT COMMENT '用户代理'
+    action_type = CharField(max_length=50, null=True, verbose_name="操作类型",
+                           constraints=[Check("action_type IN ('login', 'logout', 'api_call', 'config_change', 'security_violation')")]) # ENUM
+    resource_type = CharField(max_length=50, null=True, verbose_name="资源类型")  # VARCHAR(50) COMMENT '资源类型'
+    resource_id = CharField(max_length=100, null=True, verbose_name="资源ID")  # VARCHAR(100) COMMENT '资源ID'
+    action_details = MySQLJSONField(null=True, verbose_name="操作详情")  # JSON COMMENT '操作详情'
+    risk_level = CharField(max_length=20, null=True, default='low', verbose_name="风险等级",
+                          constraints=[Check("risk_level IN ('low', 'medium', 'high', 'critical')")]) # ENUM DEFAULT 'low'
+    status = CharField(max_length=20, null=True, verbose_name="操作状态",
+                      constraints=[Check("status IN ('success', 'failure', 'blocked')")]) # ENUM
+    created_at = DateTimeField(null=True, verbose_name="创建时间")  # 数据库中允许NULL
     
     class Meta:
         table_name = 'security_audit_logs'
@@ -111,58 +125,340 @@ class SecurityAuditLog(CommonModel):
             (('ip_address',), False),
             (('action_type',), False),
             (('risk_level',), False),
-            (('status',), False),
             (('created_at',), False),
+            (('risk_level', 'created_at'), False),  # 复合索引
         )
-    
+
+    # Action Type Constants
+    ACTION_LOGIN = 'login'
+    ACTION_LOGOUT = 'logout'
+    ACTION_API_CALL = 'api_call'
+    ACTION_CONFIG_CHANGE = 'config_change'
+    ACTION_SECURITY_VIOLATION = 'security_violation'
+
+    # Risk Level Constants
+    RISK_LOW = 'low'
+    RISK_MEDIUM = 'medium'
+    RISK_HIGH = 'high'
+    RISK_CRITICAL = 'critical'
+
+    # Status Constants
+    STATUS_SUCCESS = 'success'
+    STATUS_FAILURE = 'failure'
+    STATUS_BLOCKED = 'blocked'
+
     def get_action_details(self) -> dict:
         """获取操作详情"""
         if self.action_details:
-            try:
-                return json.loads(self.action_details)
-            except json.JSONDecodeError:
-                return {}
+            return self.action_details if isinstance(self.action_details, dict) else {}
         return {}
-    
+
     def set_action_details(self, details: dict):
         """设置操作详情"""
-        self.action_details = json.dumps(details, ensure_ascii=False)
-    
+        self.action_details = details
+
+    def update_action_details(self, key: str, value: Any):
+        """更新操作详情中的特定键值"""
+        details = self.get_action_details()
+        details[key] = value
+        self.set_action_details(details)
+
+    # Helper methods for checking action types
+    def is_login_action(self) -> bool:
+        """检查是否为登录操作"""
+        return self.action_type == self.ACTION_LOGIN
+
+    def is_logout_action(self) -> bool:
+        """检查是否为登出操作"""
+        return self.action_type == self.ACTION_LOGOUT
+
+    def is_api_call_action(self) -> bool:
+        """检查是否为API调用操作"""
+        return self.action_type == self.ACTION_API_CALL
+
+    def is_config_change_action(self) -> bool:
+        """检查是否为配置变更操作"""
+        return self.action_type == self.ACTION_CONFIG_CHANGE
+
+    def is_security_violation_action(self) -> bool:
+        """检查是否为安全违规操作"""
+        return self.action_type == self.ACTION_SECURITY_VIOLATION
+
+    # Helper methods for checking risk levels
+    def is_low_risk(self) -> bool:
+        """检查是否为低风险"""
+        return self.risk_level == self.RISK_LOW
+
+    def is_medium_risk(self) -> bool:
+        """检查是否为中等风险"""
+        return self.risk_level == self.RISK_MEDIUM
+
     def is_high_risk(self) -> bool:
-        """判断是否为高风险操作"""
-        return self.risk_level in ['high', 'critical']
-    
-    def is_security_violation(self) -> bool:
-        """判断是否为安全违规"""
-        return self.action_type == 'security_violation'
-    
+        """检查是否为高风险"""
+        return self.risk_level == self.RISK_HIGH
+
+    def is_critical_risk(self) -> bool:
+        """检查是否为严重风险"""
+        return self.risk_level == self.RISK_CRITICAL
+
+    def is_elevated_risk(self) -> bool:
+        """检查是否为提升的风险（中等或以上）"""
+        return self.risk_level in [self.RISK_MEDIUM, self.RISK_HIGH, self.RISK_CRITICAL]
+
+    # Helper methods for checking status
     def is_successful(self) -> bool:
-        """判断操作是否成功"""
-        return self.status == 'success'
-    
+        """检查操作是否成功"""
+        return self.status == self.STATUS_SUCCESS
+
+    def is_failed(self) -> bool:
+        """检查操作是否失败"""
+        return self.status == self.STATUS_FAILURE
+
     def is_blocked(self) -> bool:
-        """判断操作是否被阻断"""
-        return self.status == 'blocked'
-    
+        """检查操作是否被阻止"""
+        return self.status == self.STATUS_BLOCKED
+
+    def is_suspicious(self) -> bool:
+        """检查是否为可疑操作"""
+        return self.is_failed() or self.is_blocked() or self.is_elevated_risk()
+
+    # Class methods for querying common patterns
+    @classmethod
+    def get_security_violations(cls, days: int = 7) -> List['SecurityAuditLog']:
+        """获取指定天数内的安全违规记录"""
+        since = datetime.now() - timedelta(days=days)
+        return list(cls.select().where(
+            (cls.action_type == cls.ACTION_SECURITY_VIOLATION) &
+            (cls.created_at >= since)
+        ).order_by(cls.created_at.desc()))
+
+    @classmethod
+    def get_failed_logins(cls, days: int = 1, user_id: Optional[str] = None) -> List['SecurityAuditLog']:
+        """获取指定天数内的失败登录记录"""
+        since = datetime.now() - timedelta(days=days)
+        query = cls.select().where(
+            (cls.action_type == cls.ACTION_LOGIN) &
+            (cls.status == cls.STATUS_FAILURE) &
+            (cls.created_at >= since)
+        )
+        
+        if user_id:
+            query = query.where(cls.user_id == user_id)
+        
+        return list(query.order_by(cls.created_at.desc()))
+
+    @classmethod
+    def get_blocked_operations(cls, days: int = 7) -> List['SecurityAuditLog']:
+        """获取指定天数内被阻止的操作"""
+        since = datetime.now() - timedelta(days=days)
+        return list(cls.select().where(
+            (cls.status == cls.STATUS_BLOCKED) &
+            (cls.created_at >= since)
+        ).order_by(cls.created_at.desc()))
+
+    @classmethod
+    def get_high_risk_activities(cls, days: int = 7) -> List['SecurityAuditLog']:
+        """获取指定天数内的高风险活动"""
+        since = datetime.now() - timedelta(days=days)
+        return list(cls.select().where(
+            (cls.risk_level.in_([cls.RISK_HIGH, cls.RISK_CRITICAL])) &
+            (cls.created_at >= since)
+        ).order_by(cls.created_at.desc()))
+
+    @classmethod
+    def get_user_activities(cls, user_id: str, days: int = 30) -> List['SecurityAuditLog']:
+        """获取指定用户的活动记录"""
+        since = datetime.now() - timedelta(days=days)
+        return list(cls.select().where(
+            (cls.user_id == user_id) &
+            (cls.created_at >= since)
+        ).order_by(cls.created_at.desc()))
+
+    @classmethod
+    def get_ip_activities(cls, ip_address: str, days: int = 7) -> List['SecurityAuditLog']:
+        """获取指定IP地址的活动记录"""
+        since = datetime.now() - timedelta(days=days)
+        return list(cls.select().where(
+            (cls.ip_address == ip_address) &
+            (cls.created_at >= since)
+        ).order_by(cls.created_at.desc()))
+
+    @classmethod
+    def get_config_changes(cls, days: int = 30) -> List['SecurityAuditLog']:
+        """获取指定天数内的配置变更记录"""
+        since = datetime.now() - timedelta(days=days)
+        return list(cls.select().where(
+            (cls.action_type == cls.ACTION_CONFIG_CHANGE) &
+            (cls.created_at >= since)
+        ).order_by(cls.created_at.desc()))
+
+    @classmethod
+    def count_failed_logins_by_ip(cls, ip_address: str, hours: int = 1) -> int:
+        """统计指定IP在指定小时内的失败登录次数"""
+        since = datetime.now() - timedelta(hours=hours)
+        return cls.select().where(
+            (cls.ip_address == ip_address) &
+            (cls.action_type == cls.ACTION_LOGIN) &
+            (cls.status == cls.STATUS_FAILURE) &
+            (cls.created_at >= since)
+        ).count()
+
+    @classmethod
+    def count_failed_logins_by_user(cls, user_id: str, hours: int = 1) -> int:
+        """统计指定用户在指定小时内的失败登录次数"""
+        since = datetime.now() - timedelta(hours=hours)
+        return cls.select().where(
+            (cls.user_id == user_id) &
+            (cls.action_type == cls.ACTION_LOGIN) &
+            (cls.status == cls.STATUS_FAILURE) &
+            (cls.created_at >= since)
+        ).count()
+
+    @classmethod
+    def get_suspicious_activities(cls, days: int = 7) -> List['SecurityAuditLog']:
+        """获取可疑活动（失败或被阻止的操作，以及高风险操作）"""
+        since = datetime.now() - timedelta(days=days)
+        return list(cls.select().where(
+            (cls.created_at >= since) &
+            (
+                (cls.status.in_([cls.STATUS_FAILURE, cls.STATUS_BLOCKED])) |
+                (cls.risk_level.in_([cls.RISK_HIGH, cls.RISK_CRITICAL]))
+            )
+        ).order_by(cls.created_at.desc()))
+
+    @classmethod
+    def get_activity_summary_by_user(cls, days: int = 30) -> Dict[str, Dict[str, int]]:
+        """获取用户活动汇总统计"""
+        since = datetime.now() - timedelta(days=days)
+        
+        # 使用原始SQL进行聚合查询
+        query = """
+        SELECT user_id, action_type, status, COUNT(*) as count
+        FROM security_audit_logs 
+        WHERE created_at >= %s AND user_id IS NOT NULL
+        GROUP BY user_id, action_type, status
+        """
+        
+        result = {}
+        cursor = cls._meta.database.execute_sql(query, [since])
+        
+        for row in cursor.fetchall():
+            user_id, action_type, status, count = row
+            if user_id not in result:
+                result[user_id] = {}
+            key = f"{action_type}_{status}"
+            result[user_id][key] = count
+            
+        return result
+
+    @classmethod
+    def log_login_attempt(cls, user_id: str, ip_address: str, user_agent: str, 
+                         success: bool, details: Optional[Dict] = None) -> 'SecurityAuditLog':
+        """记录登录尝试"""
+        return cls.create(
+            user_id=user_id,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            action_type=cls.ACTION_LOGIN,
+            status=cls.STATUS_SUCCESS if success else cls.STATUS_FAILURE,
+            risk_level=cls.RISK_LOW if success else cls.RISK_MEDIUM,
+            action_details=details or {}
+        )
+
+    @classmethod
+    def log_logout(cls, user_id: str, ip_address: str, user_agent: str, 
+                  details: Optional[Dict] = None) -> 'SecurityAuditLog':
+        """记录登出操作"""
+        return cls.create(
+            user_id=user_id,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            action_type=cls.ACTION_LOGOUT,
+            status=cls.STATUS_SUCCESS,
+            risk_level=cls.RISK_LOW,
+            action_details=details or {}
+        )
+
+    @classmethod
+    def log_api_call(cls, user_id: str, ip_address: str, user_agent: str,
+                    resource_type: str, resource_id: str, success: bool,
+                    risk_level: str = RISK_LOW, details: Optional[Dict] = None) -> 'SecurityAuditLog':
+        """记录API调用"""
+        return cls.create(
+            user_id=user_id,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            action_type=cls.ACTION_API_CALL,
+            resource_type=resource_type,
+            resource_id=resource_id,
+            status=cls.STATUS_SUCCESS if success else cls.STATUS_FAILURE,
+            risk_level=risk_level,
+            action_details=details or {}
+        )
+
+    @classmethod
+    def log_config_change(cls, user_id: str, ip_address: str, user_agent: str,
+                         resource_type: str, resource_id: str, 
+                         risk_level: str = RISK_MEDIUM, details: Optional[Dict] = None) -> 'SecurityAuditLog':
+        """记录配置变更"""
+        return cls.create(
+            user_id=user_id,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            action_type=cls.ACTION_CONFIG_CHANGE,
+            resource_type=resource_type,
+            resource_id=resource_id,
+            status=cls.STATUS_SUCCESS,
+            risk_level=risk_level,
+            action_details=details or {}
+        )
+
+    @classmethod
+    def log_security_violation(cls, user_id: Optional[str], ip_address: str, user_agent: str,
+                              violation_type: str, risk_level: str = RISK_HIGH,
+                              details: Optional[Dict] = None) -> 'SecurityAuditLog':
+        """记录安全违规"""
+        violation_details = details or {}
+        violation_details['violation_type'] = violation_type
+        
+        return cls.create(
+            user_id=user_id,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            action_type=cls.ACTION_SECURITY_VIOLATION,
+            status=cls.STATUS_BLOCKED,
+            risk_level=risk_level,
+            action_details=violation_details
+        )
+
     def __str__(self):
-        return f"SecurityAuditLog({self.user_id}: {self.action_type})"
+        return f"SecurityAuditLog({self.action_type}: {self.user_id or 'anonymous'} @ {self.ip_address})"
+
+    def __repr__(self):
+        return (f"SecurityAuditLog(id={self.id}, user_id='{self.user_id}', "
+                f"action_type='{self.action_type}', status='{self.status}', "
+                f"risk_level='{self.risk_level}', created_at='{self.created_at}')")
 
 
-class CacheInvalidationLog(CommonModel):
-    """缓存失效日志表"""
+class CacheInvalidationLog(BaseModel):
+    """缓存失效日志表 - 与MySQL Schema对应"""
     
-    table_name_field = CharField(max_length=50, verbose_name="变更的表名")
-    record_id = CharField(max_length=100, verbose_name="记录ID")
-    operation_type = CharField(max_length=20, verbose_name="操作类型")  # INSERT, UPDATE, DELETE
-    cache_keys = TextField(verbose_name="需要失效的缓存键列表JSON")
-    invalidation_status = CharField(max_length=20, default='pending', verbose_name="失效状态")  # pending, processing, completed, failed
-    processed_at = DateTimeField(null=True, verbose_name="处理时间")
-    error_message = TextField(null=True, verbose_name="错误信息")
+    id = BigAutoField(primary_key=True)  # BIGINT AUTO_INCREMENT PRIMARY KEY
+    table_name = CharField(max_length=50, verbose_name="变更的表名")  # VARCHAR(50) NOT NULL
+    record_id = CharField(max_length=100, verbose_name="记录ID")  # VARCHAR(100) NOT NULL
+    operation_type = CharField(max_length=20, verbose_name="操作类型",
+                              constraints=[Check("operation_type IN ('INSERT','UPDATE','DELETE')")])  # ENUM
+    cache_keys = MySQLJSONField(verbose_name="需要失效的缓存键列表")  # JSON NOT NULL
+    invalidation_status = CharField(max_length=20, null=True, default='pending', verbose_name="失效状态",
+                                   constraints=[Check("invalidation_status IN ('pending','processing','completed','failed')")])  # ENUM DEFAULT 'pending'
+    created_at = DateTimeField(null=True, verbose_name="创建时间")  # TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    processed_at = DateTimeField(null=True, verbose_name="处理时间")  # TIMESTAMP NULL
+    error_message = TextField(null=True, verbose_name="错误信息")  # TEXT
     
     class Meta:
         table_name = 'cache_invalidation_logs'
         indexes = (
-            (('table_name_field', 'record_id'), False),
+            (('table_name', 'record_id'), False),
             (('invalidation_status',), False),
             (('created_at',), False),
         )
@@ -170,15 +466,17 @@ class CacheInvalidationLog(CommonModel):
     def get_cache_keys(self) -> list:
         """获取缓存键列表"""
         if self.cache_keys:
+            if isinstance(self.cache_keys, list):
+                return self.cache_keys
             try:
-                return json.loads(self.cache_keys)
-            except json.JSONDecodeError:
+                return json.loads(self.cache_keys) if isinstance(self.cache_keys, str) else []
+            except (json.JSONDecodeError, TypeError):
                 return []
         return []
     
     def set_cache_keys(self, keys: list):
         """设置缓存键列表"""
-        self.cache_keys = json.dumps(keys, ensure_ascii=False)
+        self.cache_keys = keys  # JSONField可以直接存储list
     
     def mark_processing(self):
         """标记为处理中"""
@@ -210,20 +508,24 @@ class CacheInvalidationLog(CommonModel):
         return self.invalidation_status == 'completed'
     
     def __str__(self):
-        return f"CacheInvalidationLog({self.table_name_field}.{self.record_id})"
+        return f"CacheInvalidationLog({self.table_name}.{self.record_id})"
 
 
-class AsyncLogQueue(CommonModel):
-    """异步日志队列表"""
+class AsyncLogQueue(BaseModel):
+    """异步日志队列表 - 与MySQL Schema对应"""
     
-    log_type = CharField(max_length=50, verbose_name="日志类型")  # api_call, security_audit, performance, error
-    log_data = TextField(verbose_name="日志数据JSON")
-    priority = IntegerField(default=1, verbose_name="优先级")
-    status = CharField(max_length=20, default='pending', verbose_name="处理状态")  # pending, processing, completed, failed
-    retry_count = IntegerField(default=0, verbose_name="重试次数")
-    max_retries = IntegerField(default=3, verbose_name="最大重试次数")
-    processed_at = DateTimeField(null=True, verbose_name="处理时间")
-    error_message = TextField(null=True, verbose_name="错误信息")
+    id = BigAutoField(primary_key=True)  # BIGINT AUTO_INCREMENT PRIMARY KEY
+    log_type = CharField(max_length=50, null=True, verbose_name="日志类型",
+                        constraints=[Check("log_type IN ('api_call','security_audit','performance','error')")])  # ENUM NOT NULL
+    log_data = MySQLJSONField(verbose_name="日志数据")  # JSON NOT NULL
+    priority = IntegerField(null=True, default=1, verbose_name="优先级")  # INT DEFAULT 1
+    status = CharField(max_length=20, null=True, default='pending', verbose_name="处理状态",
+                      constraints=[Check("status IN ('pending','processing','completed','failed')")])  # ENUM DEFAULT 'pending'
+    retry_count = IntegerField(null=True, default=0, verbose_name="重试次数")  # INT DEFAULT 0
+    max_retries = IntegerField(null=True, default=3, verbose_name="最大重试次数")  # INT DEFAULT 3
+    created_at = DateTimeField(null=True, verbose_name="创建时间")  # TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    processed_at = DateTimeField(null=True, verbose_name="处理时间")  # TIMESTAMP NULL
+    error_message = TextField(null=True, verbose_name="错误信息")  # TEXT
     
     class Meta:
         table_name = 'async_log_queue'
@@ -237,15 +539,17 @@ class AsyncLogQueue(CommonModel):
     def get_log_data(self) -> dict:
         """获取日志数据"""
         if self.log_data:
+            if isinstance(self.log_data, dict):
+                return self.log_data
             try:
-                return json.loads(self.log_data)
-            except json.JSONDecodeError:
+                return json.loads(self.log_data) if isinstance(self.log_data, str) else {}
+            except (json.JSONDecodeError, TypeError):
                 return {}
         return {}
     
     def set_log_data(self, data: dict):
         """设置日志数据"""
-        self.log_data = json.dumps(data, ensure_ascii=False)
+        self.log_data = data  # JSONField可以直接存储dict
     
     def start_processing(self):
         """开始处理"""
@@ -290,7 +594,7 @@ class AsyncLogQueue(CommonModel):
         return f"AsyncLogQueue({self.log_type}: {self.status})"
 
 
-class PerformanceLog(CommonModel):
+class PerformanceLog(BaseModel):
     """性能监控日志表"""
     
     endpoint = CharField(max_length=200, verbose_name="API端点")
@@ -306,6 +610,8 @@ class PerformanceLog(CommonModel):
     cache_hit = BooleanField(null=True, verbose_name="是否缓存命中")
     database_queries = IntegerField(default=0, verbose_name="数据库查询次数")
     external_api_calls = IntegerField(default=0, verbose_name="外部API调用次数")
+    created_at = DateTimeField(default=datetime.now, verbose_name="创建时间")
+    updated_at = DateTimeField(default=datetime.now, verbose_name="更新时间")
     
     class Meta:
         table_name = 'performance_logs'

@@ -17,26 +17,45 @@ class DeviceInfo(BaseModel):
 
 
 class ChatContext(BaseModel):
-    """对话上下文"""
+    """对话上下文 - B2B架构优化版"""
+    # 前端可以提供的信息
     device_info: Optional[DeviceInfo] = Field(None, description="设备信息")
-    location: Optional[Dict[str, Any]] = Field(None, description="位置信息")
-    user_preferences: Optional[Dict[str, Any]] = Field(None, description="用户偏好")
-    session_data: Optional[Dict[str, Any]] = Field(None, description="会话数据")
+    location: Optional[Dict[str, Any]] = Field(None, description="位置信息") 
+    
+    # B2B系统特有字段
+    client_system_id: Optional[str] = Field(None, description="客户端系统标识")
+    request_trace_id: Optional[str] = Field(None, description="请求追踪ID")
+    business_context: Optional[Dict[str, Any]] = Field(None, description="业务上下文")
+    
+    # 临时会话覆盖（可选，用于特殊场景）
+    temp_preferences: Optional[Dict[str, Any]] = Field(None, description="临时偏好覆盖")
 
 
-class ChatInteractRequest(BaseModel):
-    """对话交互请求"""
+class ChatRequest(BaseModel):
+    """对话请求"""
     user_id: str = Field(..., description="用户ID", min_length=1, max_length=100)
-    input: str = Field(..., description="用户输入", min_length=1, max_length=1000)
+    input: Optional[str] = Field(None, description="用户输入", min_length=1, max_length=1000)
+    session_id: Optional[str] = Field(None, description="会话ID", max_length=50, example="sess_a1b2c3d4e5f6")
     context: Optional[ChatContext] = Field(None, description="对话上下文")
     
-    @field_validator('input')
+    # 向后兼容字段（可选）
+    message: Optional[str] = Field(None, description="用户消息（兼容字段）", exclude=True)
+    
+    @field_validator('input', mode='before')
     @classmethod
-    def validate_input(cls, v):
-        """验证用户输入"""
-        if not v or not v.strip():
+    def validate_input(cls, v, info):
+        """验证用户输入 - 支持message字段向后兼容"""
+        # 如果没有input但有message，使用message
+        if not v and info.data and info.data.get('message'):
+            v = info.data['message']
+        
+        # 如果仍然没有值，抛出错误
+        if not v:
+            raise ValueError('用户输入不能为空（input或message字段必须提供一个）')
+            
+        if not str(v).strip():
             raise ValueError('用户输入不能为空')
-        return v.strip()
+        return str(v).strip()
     
     @field_validator('user_id')
     @classmethod
@@ -45,16 +64,41 @@ class ChatInteractRequest(BaseModel):
         if not v or not v.strip():
             raise ValueError('用户ID不能为空')
         return v.strip()
+    
+    def model_post_init(self, __context) -> None:
+        """模型初始化后处理"""
+        # 确保input字段存在且有值
+        if not self.input and hasattr(self, 'message') and self.message:
+            object.__setattr__(self, 'input', self.message)
+
+
+# 向后兼容别名
+ChatInteractRequest = ChatRequest
 
 
 class SlotInfo(BaseModel):
-    """槽位信息"""
-    value: Any = Field(..., description="槽位值")
-    confidence: Optional[float] = Field(None, description="置信度", ge=0.0, le=1.0)
-    source: Optional[str] = Field(None, description="数据来源", example="llm")
+    """槽位信息 - 支持多轮对话的完整槽位结构"""
+    name: str = Field(..., description="槽位名称")
     original_text: Optional[str] = Field(None, description="原始文本")
-    is_validated: Optional[bool] = Field(True, description="是否已验证")
-    validation_error: Optional[str] = Field(None, description="验证错误信息")
+    extracted_value: Any = Field(..., description="提取的值")
+    normalized_value: Any = Field(..., description="标准化后的值")
+    confidence: Optional[float] = Field(None, description="置信度", ge=0.0, le=1.0)
+    extraction_method: Optional[str] = Field(None, description="提取方法", example="user_input")
+    validation: Optional[Dict[str, Any]] = Field(None, description="验证状态")
+    is_confirmed: Optional[bool] = Field(False, description="是否已确认")
+    
+    # 向后兼容字段
+    value: Optional[Any] = Field(None, description="槽位值（兼容字段）")
+    source: Optional[str] = Field(None, description="数据来源（兼容字段）")
+    is_validated: Optional[bool] = Field(True, description="是否已验证（兼容字段）")
+    validation_error: Optional[str] = Field(None, description="验证错误信息（兼容字段）")
+    
+    def model_post_init(self, __context) -> None:
+        """模型初始化后处理 - 确保向后兼容"""
+        if self.value is None and self.normalized_value is not None:
+            self.value = self.normalized_value
+        if self.source is None and self.extraction_method is not None:
+            self.source = self.extraction_method
 
 
 class IntentCandidate(BaseModel):
@@ -74,9 +118,18 @@ class ApiResultData(BaseModel):
     error_code: Optional[str] = Field(None, description="错误代码")
 
 
+class SessionMetadata(BaseModel):
+    """会话元数据"""
+    total_turns: int = Field(0, description="总对话轮次")
+    session_duration_seconds: int = Field(0, description="会话持续时间(秒)")
+    context_history: Optional[List[Dict[str, Any]]] = Field(None, description="上下文历史")
+
+
 class ChatResponse(BaseModel):
-    """对话响应"""
+    """对话响应 - 支持多轮对话的完整响应结构"""
     response: str = Field(..., description="系统响应文本")
+    session_id: str = Field(..., description="会话ID")
+    conversation_turn: int = Field(1, description="当前对话轮次")
     intent: Optional[str] = Field(None, description="识别的意图名称")
     confidence: float = Field(0.0, description="置信度", ge=0.0, le=1.0)
     slots: Dict[str, SlotInfo] = Field(default_factory=dict, description="已填充的槽位")
@@ -90,7 +143,9 @@ class ChatResponse(BaseModel):
     validation_errors: Optional[Dict[str, str]] = Field(None, description="验证错误")
     api_result: Optional[ApiResultData] = Field(None, description="API调用结果")
     suggestions: Optional[List[str]] = Field(None, description="建议操作")
-    message_type: str = Field("chat_response", description="消息类型")
+    
+    # 会话元数据
+    session_metadata: Optional[SessionMetadata] = Field(None, description="会话元数据")
     
     # 元数据
     processing_time_ms: Optional[int] = Field(None, description="处理时间(毫秒)")
@@ -119,12 +174,6 @@ class DisambiguationResponse(BaseModel):
     message: Optional[str] = Field(None, description="提示消息")
 
 
-class ChatRequest(BaseModel):
-    """通用对话请求（兼容旧版本）"""
-    user_id: str = Field(..., description="用户ID")
-    message: str = Field(..., description="用户消息")
-    session_id: Optional[str] = Field(None, description="会话ID")
-    context: Optional[Dict[str, Any]] = Field(None, description="上下文")
 
 
 class ChatSessionInfo(BaseModel):
@@ -142,7 +191,7 @@ class ConversationHistory(BaseModel):
     """对话历史"""
     conversation_id: int = Field(..., description="对话ID")
     user_input: str = Field(..., description="用户输入")
-    system_response: str = Field(..., description="系统响应")
+    response: str = Field(..., description="系统响应")
     intent_recognized: Optional[str] = Field(None, description="识别的意图")
     confidence_score: Optional[float] = Field(None, description="置信度")
     response_type: Optional[str] = Field(None, description="响应类型")
@@ -153,7 +202,7 @@ class ConversationHistory(BaseModel):
 
 class BatchChatRequest(BaseModel):
     """批量对话请求"""
-    requests: List[ChatInteractRequest] = Field(..., description="请求列表", max_items=10)
+    requests: List[ChatRequest] = Field(..., description="请求列表", max_items=10)
     
     @field_validator('requests')
     @classmethod
