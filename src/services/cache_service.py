@@ -707,3 +707,7 @@ async def get_cache_service() -> CacheService:
         await _cache_service.initialize()
     
     return _cache_service
+
+
+# 同步访问的缓存服务实例（向后兼容）
+cache_service: Optional[CacheService] = None

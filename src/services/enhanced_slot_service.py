@@ -11,7 +11,7 @@ from src.services.slot_value_service import SlotValueService, get_slot_value_ser
 from src.utils.slot_data_transformer import SlotDataTransformer
 from src.schemas.chat import SlotInfo
 from src.models.intent import Intent
-from src.models.slot import SlotValue
+from src.models.slot_value import SlotValue
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -63,6 +63,9 @@ class EnhancedSlotService:
             unified_slots = await self._convert_to_slot_info_format(
                 raw_result.slots, intent.intent_name
             )
+            
+            # 2.5. 应用槽位值标准化
+            unified_slots = await self._normalize_slot_values(unified_slots, intent)
             
             # 3. 获取槽位定义进行验证
             slot_definitions = await self._get_slot_definitions(intent)
@@ -255,18 +258,31 @@ class EnhancedSlotService:
         for slot_name, slot_value in raw_slots.items():
             if isinstance(slot_value, dict):
                 # 如果已经是字典格式
+                extracted_value = slot_value.get('value')
+                original_text = slot_value.get('original_text')
+                
+                # 修复：如果value为空但original_text有值，使用original_text作为extracted_value
+                # 处理空字符串和None的情况
+                if (not extracted_value or extracted_value == '') and (original_text and original_text != ''):
+                    extracted_value = original_text
+                # 如果两者都为空，跳过这个槽位
+                elif (not extracted_value or extracted_value == '') and (not original_text or original_text == ''):
+                    continue
+                
                 slot_info = SlotInfo(
                     name=slot_name,
-                    extracted_value=slot_value.get('value'),
-                    normalized_value=slot_value.get('value'),
+                    extracted_value=extracted_value,
+                    normalized_value=extracted_value,  # 初始设为extracted_value，后续会被normalization更新
                     confidence=slot_value.get('confidence'),
                     extraction_method=slot_value.get('source', 'nlu'),
-                    original_text=slot_value.get('original_text'),
+                    original_text=original_text,
                     is_confirmed=slot_value.get('is_validated', True),
+                    validation=None,  # 确保validation字段为None
                     # 向后兼容字段
-                    value=slot_value.get('value'),
+                    value=extracted_value,
                     source=slot_value.get('source', 'nlu'),
-                    is_validated=slot_value.get('is_validated', True)
+                    is_validated=slot_value.get('is_validated', True),
+                    validation_error=None  # 确保validation_error为None
                 )
             else:
                 # 简单值格式
@@ -277,15 +293,190 @@ class EnhancedSlotService:
                     confidence=None,
                     extraction_method='nlu',
                     is_confirmed=True,
+                    validation=None,  # 确保validation字段为None
                     # 向后兼容字段
                     value=slot_value,
                     source='nlu',
-                    is_validated=True
+                    is_validated=True,
+                    validation_error=None  # 确保validation_error为None
                 )
             
             result[slot_name] = slot_info
         
         return result
+    
+    async def _normalize_slot_values(self, slots: Dict[str, SlotInfo], intent: Intent) -> Dict[str, SlotInfo]:
+        """
+        对槽位值进行标准化处理
+        
+        Args:
+            slots: 槽位字典
+            intent: 意图对象
+            
+        Returns:
+            Dict[str, SlotInfo]: 标准化后的槽位字典
+        """
+        try:
+            # 获取槽位定义以了解槽位类型
+            slot_definitions = await self._get_slot_definitions(intent)
+            
+            for slot_name, slot_info in slots.items():
+                # 跳过没有有效提取值的槽位
+                if not slot_info.extracted_value or slot_info.extracted_value == '':
+                    continue
+                    
+                # 获取槽位类型
+                slot_def = slot_definitions.get(slot_name, {})
+                slot_type = slot_def.get('slot_type', 'text')
+                
+                # 应用类型特定的标准化
+                if slot_type == 'date':
+                    normalized_value = await self._normalize_date_value(slot_info.extracted_value)
+                    # 更新SlotInfo对象的normalized_value和value字段
+                    slot_info.normalized_value = normalized_value
+                    slot_info.value = normalized_value
+                elif slot_type == 'number':
+                    # 数字标准化，包括中文数字转换
+                    normalized_value = self._normalize_number_value(slot_info.extracted_value)
+                    slot_info.normalized_value = normalized_value
+                    slot_info.value = normalized_value
+                else:
+                    # 其他类型的基本标准化（去除首尾空格）
+                    normalized_value = str(slot_info.extracted_value).strip()
+                    slot_info.normalized_value = normalized_value
+                    slot_info.value = normalized_value
+            
+            # 移除仍然为空的槽位
+            filtered_slots = {}
+            for slot_name, slot_info in slots.items():
+                if slot_info.extracted_value and slot_info.extracted_value != '':
+                    filtered_slots[slot_name] = slot_info
+                    
+            return filtered_slots
+            
+        except Exception as e:
+            logger.error(f"槽位值标准化失败: {str(e)}")
+            return slots
+    
+    async def _normalize_date_value(self, value: str) -> str:
+        """
+        标准化日期值，将相对日期转换为具体日期
+        
+        Args:
+            value: 原始日期值
+            
+        Returns:
+            str: 标准化后的日期字符串 (YYYY-MM-DD格式)
+        """
+        try:
+            from datetime import timedelta
+            
+            if isinstance(value, str):
+                value_clean = value.strip()
+                
+                # 处理相对日期
+                if '今天' in value_clean or '今日' in value_clean:
+                    return datetime.now().strftime('%Y-%m-%d')
+                elif '明天' in value_clean or '明日' in value_clean:
+                    return (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
+                elif '后天' in value_clean:
+                    return (datetime.now() + timedelta(days=2)).strftime('%Y-%m-%d')
+                elif '昨天' in value_clean or '昨日' in value_clean:
+                    return (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
+                elif '前天' in value_clean:
+                    return (datetime.now() - timedelta(days=2)).strftime('%Y-%m-%d')
+                
+                # 尝试解析其他日期格式
+                import re
+                if re.match(r'^\d{4}-\d{2}-\d{2}$', value_clean):
+                    # 验证日期是否有效
+                    try:
+                        datetime.strptime(value_clean, '%Y-%m-%d')
+                        return value_clean
+                    except ValueError:
+                        pass
+                
+                # 如果无法解析，返回原值
+                return value_clean
+            
+            return str(value)
+            
+        except Exception as e:
+            logger.warning(f"日期标准化失败: {value}, 错误: {str(e)}")
+            return str(value)
+    
+    def _normalize_number_value(self, value: str) -> str:
+        """
+        标准化数字值，将中文数字转换为阿拉伯数字
+        
+        Args:
+            value: 原始数字值
+            
+        Returns:
+            str: 标准化后的数字字符串
+        """
+        try:
+            if not value or value == '':
+                return '0'
+                
+            value_clean = str(value).strip()
+            
+            # 中文数字映射
+            chinese_numbers = {
+                '零': '0', '一': '1', '二': '2', '三': '3', '四': '4',
+                '五': '5', '六': '6', '七': '7', '八': '8', '九': '9',
+                '十': '10', '两': '2', '俩': '2'
+            }
+            
+            # 处理包含量词的情况（如"一张"、"两位"、"三个"等）
+            # 提取字符串中的中文数字部分
+            for chinese_num in ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十', '两', '俩', '零']:
+                if chinese_num in value_clean:
+                    # 如果找到中文数字，返回对应的阿拉伯数字
+                    if chinese_num in chinese_numbers:
+                        return chinese_numbers[chinese_num]
+            
+            # 如果是纯中文数字，进行转换
+            if value_clean in chinese_numbers:
+                return chinese_numbers[value_clean]
+            
+            # 处理复合中文数字（如"十二"、"二十"等）
+            if '十' in value_clean:
+                if value_clean == '十':
+                    return '10'
+                elif value_clean.startswith('十'):
+                    # 十X -> 1X
+                    suffix = value_clean[1:]
+                    if suffix in chinese_numbers:
+                        return '1' + chinese_numbers[suffix]
+                elif value_clean.endswith('十'):
+                    # X十 -> X0
+                    prefix = value_clean[:-1]
+                    if prefix in chinese_numbers:
+                        return chinese_numbers[prefix] + '0'
+                else:
+                    # X十Y -> XY
+                    parts = value_clean.split('十')
+                    if len(parts) == 2 and parts[0] in chinese_numbers and parts[1] in chinese_numbers:
+                        return chinese_numbers[parts[0]] + chinese_numbers[parts[1]]
+            
+            # 尝试直接转换为数字验证
+            try:
+                num = float(value_clean)
+                # 如果是整数，返回整数格式
+                if num.is_integer():
+                    return str(int(num))
+                else:
+                    return str(num)
+            except ValueError:
+                pass
+            
+            # 如果无法转换，返回原值
+            return value_clean
+            
+        except Exception as e:
+            logger.warning(f"数字标准化失败: {value}, 错误: {str(e)}")
+            return str(value)
     
     async def _get_slot_definitions(self, intent: Intent) -> Dict[str, Dict[str, Any]]:
         """获取槽位定义"""

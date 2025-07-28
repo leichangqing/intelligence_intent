@@ -104,52 +104,6 @@ CREATE TABLE IF NOT EXISTS intents (
     INDEX idx_created_by (created_by)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='意图配置表';
 
--- 6. 会话表
-CREATE TABLE IF NOT EXISTS sessions (
-    id INT PRIMARY KEY AUTO_INCREMENT,
-    session_id VARCHAR(100) UNIQUE NOT NULL COMMENT '会话ID',
-    user_id VARCHAR(100) NOT NULL COMMENT '用户ID',
-    current_intent VARCHAR(100) COMMENT '当前意图',
-    session_state ENUM('active', 'completed', 'expired', 'error') DEFAULT 'active' COMMENT '会话状态',
-    context JSON COMMENT '会话上下文',
-    metadata JSON COMMENT '会话元数据',
-    expires_at TIMESTAMP NULL COMMENT '过期时间',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-    INDEX idx_session_id (session_id),
-    INDEX idx_user_id (user_id),
-    INDEX idx_state (session_state),
-    INDEX idx_expires_at (expires_at),
-    INDEX idx_current_intent (current_intent)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='会话表';
-
--- 7. 对话记录表
-CREATE TABLE IF NOT EXISTS conversations (
-    id BIGINT PRIMARY KEY AUTO_INCREMENT,
-    session_id VARCHAR(100) NOT NULL COMMENT '会话ID',
-    user_id VARCHAR(100) NOT NULL COMMENT '用户ID',
-    user_input TEXT NOT NULL COMMENT '用户输入',
-    intent_recognized VARCHAR(100) COMMENT '识别的意图',
-    confidence_score DECIMAL(5,4) COMMENT '置信度分数',
-    system_response TEXT COMMENT '系统响应',
-    response_type VARCHAR(50) COMMENT '响应类型',
-    status VARCHAR(50) COMMENT '处理状态',
-    processing_time_ms INT COMMENT '处理时间毫秒',
-    error_message TEXT COMMENT '错误信息',
-    metadata JSON COMMENT '元数据',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-    INDEX idx_session_id (session_id),
-    INDEX idx_user_id (user_id),
-    INDEX idx_intent (intent_recognized),
-    INDEX idx_status (status),
-    INDEX idx_created_at (created_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='对话记录表';
-
--- ================================
--- 功能扩展表
--- ================================
-
 -- 2. 槽位配置表
 CREATE TABLE IF NOT EXISTS slots (
     id INT PRIMARY KEY AUTO_INCREMENT,
@@ -174,7 +128,7 @@ CREATE TABLE IF NOT EXISTS slots (
     INDEX idx_slot_type (slot_type)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='槽位配置表';
 
--- 3. 槽位值存储表 
+-- 3. 槽位值存储表 (v2.2新增)
 CREATE TABLE IF NOT EXISTS slot_values (
     id INT PRIMARY KEY AUTO_INCREMENT,
     conversation_id BIGINT NOT NULL COMMENT '对话ID',
@@ -226,6 +180,51 @@ CREATE TABLE IF NOT EXISTS conversation_status (
     INDEX idx_is_final (is_final)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='会话状态表';
 
+-- 6. 会话表
+CREATE TABLE IF NOT EXISTS sessions (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    session_id VARCHAR(100) UNIQUE NOT NULL COMMENT '会话ID',
+    user_id VARCHAR(100) NOT NULL COMMENT '用户ID',
+    current_intent VARCHAR(100) COMMENT '当前意图',
+    session_state ENUM('active', 'completed', 'expired', 'error') DEFAULT 'active' COMMENT '会话状态',
+    context JSON COMMENT '会话上下文',
+    metadata JSON COMMENT '会话元数据',
+    expires_at TIMESTAMP NULL COMMENT '过期时间',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    INDEX idx_session_id (session_id),
+    INDEX idx_user_id (user_id),
+    INDEX idx_state (session_state),
+    INDEX idx_expires_at (expires_at),
+    INDEX idx_current_intent (current_intent)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='会话表';
+
+-- 7. 对话记录表
+CREATE TABLE IF NOT EXISTS conversations (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    session_id VARCHAR(100) NOT NULL COMMENT '会话ID',
+    user_id VARCHAR(100) NOT NULL COMMENT '用户ID',
+    user_input TEXT NOT NULL COMMENT '用户输入',
+    intent_recognized VARCHAR(100) COMMENT '识别的意图',
+    confidence_score DECIMAL(5,4) COMMENT '置信度分数',
+    system_response TEXT COMMENT '系统响应',
+    response_type VARCHAR(50) COMMENT '响应类型',
+    status VARCHAR(50) COMMENT '处理状态',
+    processing_time_ms INT COMMENT '处理时间毫秒',
+    error_message TEXT COMMENT '错误信息',
+    metadata JSON COMMENT '元数据',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    INDEX idx_session_id (session_id),
+    INDEX idx_user_id (user_id),
+    INDEX idx_intent (intent_recognized),
+    INDEX idx_status (status),
+    INDEX idx_created_at (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='对话记录表';
+
+-- ================================
+-- 功能扩展表
+-- ================================
 
 -- 7.5. 函数定义表
 CREATE TABLE IF NOT EXISTS functions (
@@ -284,14 +283,12 @@ CREATE TABLE IF NOT EXISTS system_configs (
     validation_rule VARCHAR(500) COMMENT '验证规则',
     default_value TEXT COMMENT '默认值',
     is_active BOOLEAN DEFAULT TRUE COMMENT '是否激活',
-    last_health_check TIMESTAMP NULL COMMENT '最后健康检查时间',
     created_by VARCHAR(100) COMMENT '创建人',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     UNIQUE KEY systemconfig_config_category_config_key (config_category, config_key),
     INDEX systemconfig_is_active (is_active),
-    INDEX systemconfig_is_public (is_public),
-    INDEX systemconfig_last_health_check (last_health_check)
+    INDEX systemconfig_is_public (is_public)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='系统配置表';
 
 -- 7. 配置审计日志表
@@ -940,7 +937,7 @@ CREATE TABLE IF NOT EXISTS user_contexts (
     user_id VARCHAR(100) NOT NULL COMMENT '用户ID',
     context_type VARCHAR(50) NOT NULL COMMENT '上下文类型',
     context_key VARCHAR(100) NOT NULL COMMENT '上下文键',
-    context_value JSON COMMENT '上下文值',
+    context_value JSON NOT NULL COMMENT '上下文值',
     scope VARCHAR(50) DEFAULT 'session' COMMENT '作用域',
     priority INT DEFAULT 1 COMMENT '优先级',
     expires_at TIMESTAMP NULL COMMENT '过期时间',

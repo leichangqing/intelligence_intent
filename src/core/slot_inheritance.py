@@ -9,7 +9,8 @@ from datetime import datetime, timedelta
 from enum import Enum
 import logging
 
-from ..models.slot import Slot, SlotValue, SlotDependency
+from ..models.slot import Slot
+from ..models.slot_value import SlotValue, SlotDependency
 from ..models.conversation import Conversation
 from ..utils.logger import get_logger
 
@@ -351,7 +352,7 @@ class ConversationInheritanceManager:
     def _setup_default_rules(self):
         """设置默认继承规则"""
         default_rules = [
-            # 城市继承规则
+            # 通用槽位继承规则 - 所有槽位都应该从会话历史中继承
             InheritanceRule(
                 source_slot="departure_city",
                 target_slot="departure_city",
@@ -360,6 +361,40 @@ class ConversationInheritanceManager:
                 priority=10,
                 ttl_seconds=3600  # 1小时内有效
             ),
+            InheritanceRule(
+                source_slot="arrival_city",
+                target_slot="arrival_city",
+                inheritance_type=InheritanceType.SESSION,
+                strategy=InheritanceStrategy.SUPPLEMENT,
+                priority=10,
+                ttl_seconds=3600  # 1小时内有效
+            ),
+            InheritanceRule(
+                source_slot="departure_date",
+                target_slot="departure_date",
+                inheritance_type=InheritanceType.SESSION,
+                strategy=InheritanceStrategy.SUPPLEMENT,
+                priority=10,
+                ttl_seconds=3600  # 1小时内有效
+            ),
+            InheritanceRule(
+                source_slot="return_date",
+                target_slot="return_date",
+                inheritance_type=InheritanceType.SESSION,
+                strategy=InheritanceStrategy.SUPPLEMENT,
+                priority=10,
+                ttl_seconds=3600  # 1小时内有效
+            ),
+            InheritanceRule(
+                source_slot="passenger_count",
+                target_slot="passenger_count",
+                inheritance_type=InheritanceType.SESSION,
+                strategy=InheritanceStrategy.SUPPLEMENT,
+                priority=10,
+                ttl_seconds=3600  # 1小时内有效
+            ),
+            
+            # 城市交叉继承规则
             InheritanceRule(
                 source_slot="arrival_city",
                 target_slot="departure_city",
@@ -523,14 +558,17 @@ class ConversationInheritanceManager:
             
             context = {}
             for conv in recent_conversations:
-                if conv.slots_filled:
-                    # 解析槽位值
-                    import json
-                    slots = json.loads(conv.slots_filled)
-                    for slot_name, slot_value in slots.items():
-                        if slot_name not in context:  # 使用最新的值
-                            context[slot_name] = slot_value
-                            context[f"{slot_name}_timestamp"] = conv.created_at
+                # V2.2重构: 使用get_slots_filled方法获取槽位
+                try:
+                    slots = conv.get_slots_filled()
+                    if slots:
+                        for slot_name, slot_value in slots.items():
+                            if slot_name not in context:  # 使用最新的值
+                                context[slot_name] = slot_value
+                                context[f"{slot_name}_timestamp"] = conv.created_at
+                except Exception as e:
+                    logger.warning(f"获取对话槽位失败: {conv.id}, 错误: {str(e)}")
+                    continue
             
             return context
             
@@ -539,21 +577,32 @@ class ConversationInheritanceManager:
             return {}
     
     async def _get_session_context(self, user_id: str) -> Dict[str, Any]:
-        """获取会话上下文"""
+        """获取会话上下文 - 直接从最近的对话记录中获取槽位信息"""
         try:
-            # 查询当前会话的槽位值
-            from ..models.conversation import Session
+            # V2.2 改进：直接从最近的对话记录获取槽位，而不依赖Session.context
+            recent_conversations = list(
+                Conversation.select()
+                .where(Conversation.user_id == user_id)
+                .order_by(Conversation.created_at.desc())
+                .limit(5)  # 获取最近5轮对话
+            )
             
-            active_session = Session.select().where(
-                Session.user_id == user_id,
-                Session.session_state == 'active'
-            ).order_by(Session.created_at.desc()).first()
+            context = {}
+            for conv in recent_conversations:
+                try:
+                    slots = conv.get_slots_filled()
+                    if slots:
+                        # 使用最新的槽位值（第一个遇到的）
+                        for slot_name, slot_data in slots.items():
+                            if slot_name not in context:
+                                context[slot_name] = slot_data.get('value')
+                                context[f"{slot_name}_timestamp"] = conv.created_at
+                except Exception as e:
+                    logger.warning(f"获取对话槽位失败: {conv.id}, 错误: {str(e)}")
+                    continue
             
-            if active_session and active_session.context:
-                import json
-                return json.loads(active_session.context)
-            
-            return {}
+            logger.debug(f"获取会话上下文: 用户={user_id}, 槽位数={len([k for k in context.keys() if not k.endswith('_timestamp')])}")
+            return context
             
         except Exception as e:
             logger.error(f"获取会话上下文失败: {e}")

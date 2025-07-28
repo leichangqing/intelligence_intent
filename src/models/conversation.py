@@ -137,17 +137,32 @@ class Conversation(CommonModel):
         v2.2改进: 从 slot_values 表动态获取已填充的槽位
         此方法现在需要查询相关的 slot_values 记录
         """
-        from src.services.slot_value_service import get_slot_value_service
         try:
-            slot_value_service = get_slot_value_service()
-            import asyncio
-            # 使用现有的异步方法获取对话槽位
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            try:
-                return loop.run_until_complete(slot_value_service.get_conversation_slots(self.id, include_invalid=False))
-            finally:
-                loop.close()
+            from src.models.slot_value import SlotValue
+            from src.models.slot import Slot
+            
+            # 直接使用数据库查询，避免异步调用
+            slot_values = list(
+                SlotValue.select(SlotValue, Slot)
+                .join(Slot)
+                .where(
+                    (SlotValue.conversation == self.id) &
+                    (SlotValue.validation_status.in_(['valid', 'pending']))
+                )
+            )
+            
+            result = {}
+            for slot_value in slot_values:
+                final_value = slot_value.normalized_value or slot_value.extracted_value
+                if final_value:
+                    result[slot_value.slot_name] = {
+                        'value': final_value,
+                        'confidence': float(slot_value.confidence) if slot_value.confidence else 0.0,
+                        'extraction_method': slot_value.extraction_method or 'unknown',
+                        'original_text': slot_value.original_text or ''
+                    }
+            
+            return result
         except Exception:
             return {}
     
@@ -211,6 +226,21 @@ class Conversation(CommonModel):
     def is_fast_response(self, threshold_ms: int = 2000) -> bool:
         """判断是否为快速响应"""
         return self.processing_time_ms and self.processing_time_ms < threshold_ms
+    
+    @property
+    def slots_filled(self) -> dict:
+        """兼容性属性: 返回已填充的槽位"""
+        return self.get_slots_filled()
+    
+    @property 
+    def intent_name(self) -> str:
+        """兼容性属性: 返回意图名称"""
+        return self.intent_recognized
+    
+    @intent_name.setter
+    def intent_name(self, value: str):
+        """兼容性属性: 设置意图名称"""
+        self.intent_recognized = value
     
     def __str__(self):
         return f"Conversation({self.session_id}: {self.user_input[:50]}...)"

@@ -6,7 +6,8 @@ import re
 import json
 from datetime import datetime
 
-from src.models.slot import Slot, SlotValue, SlotDependency
+from src.models.slot import Slot
+from src.models.slot_value import SlotValue, SlotDependency
 from src.models.intent import Intent
 from src.models.conversation import Conversation
 from src.services.cache_service import CacheService
@@ -102,6 +103,13 @@ class SlotService:
             
             # 6. 合并提取的槽位值
             for slot_name, slot_info in extracted_slots.items():
+                # 确保slot_info是字典类型
+                if isinstance(slot_info, str):
+                    # 如果是字符串，转换为字典格式
+                    slot_info = {'value': slot_info, 'confidence': 0.8, 'source': 'llm'}
+                elif not isinstance(slot_info, dict):
+                    continue
+                    
                 if slot_info.get('value') is not None:
                     slots[slot_name] = {
                         'value': slot_info['value'],
@@ -232,7 +240,7 @@ class SlotService:
         
         # 构建验证上下文
         validation_context = {
-            'slots': {name: info.get('value') for name, info in slots.items()},
+            'slots': {name: info.get('value') if isinstance(info, dict) else info for name, info in slots.items()},
             **(context or {})
         }
         
@@ -240,6 +248,12 @@ class SlotService:
             if slot_name not in slot_def_map:
                 continue
             
+            # 确保slot_info是字典类型
+            if isinstance(slot_info, str):
+                slot_info = {'value': slot_info, 'confidence': 0.8, 'source': 'llm'}
+            elif not isinstance(slot_info, dict):
+                continue
+                
             slot_def = slot_def_map[slot_name]
             slot_value = slot_info.get('value')
             
@@ -373,7 +387,7 @@ class SlotService:
         """处理槽位依赖关系"""
         try:
             # 构建槽位值字典用于依赖检查
-            slot_values = {name: info.get('value') for name, info in slots.items()}
+            slot_values = {name: info.get('value') if isinstance(info, dict) else info for name, info in slots.items()}
             
             # 验证所有槽位依赖关系
             is_satisfied, dependency_errors = await self.validate_slot_dependencies(
@@ -713,24 +727,27 @@ class SlotService:
                 # 检查是否已存在槽位值记录
                 try:
                     slot_value = SlotValue.get(
-                        SlotValue.conversation_id == conversation_id,
+                        SlotValue.conversation == conversation_id,
                         SlotValue.slot == slot_def
                     )
                     # 记录更新前的值
                     old_values = {
-                        'value': slot_value.value,
+                        'extracted_value': slot_value.extracted_value,
                         'confidence': float(slot_value.confidence) if slot_value.confidence else None,
                         'extraction_method': slot_value.extraction_method,
-                        'is_validated': slot_value.is_validated
+                        'validation_status': slot_value.validation_status
                     }
                     
                     # 更新现有记录
-                    slot_value.value = str(slot_info['value'])
+                    slot_value.extracted_value = str(slot_info['value'])
                     slot_value.confidence = slot_info.get('confidence')
                     slot_value.extraction_method = slot_info.get('source', 'llm')
-                    slot_value.normalized_value = str(slot_info['value'])
-                    slot_value.is_validated = slot_info.get('is_validated', True)
+                    slot_value.validation_status = 'valid' if slot_info.get('is_validated', True) else 'pending'
                     slot_value.validation_error = slot_info.get('validation_error')
+                    
+                    # 重新标准化值
+                    slot_value.normalized_value = None  # 清空以触发重新标准化
+                    slot_value.normalize_value()
                     
                     updated_slots.append({
                         'slot_name': slot_name,
@@ -741,16 +758,19 @@ class SlotService:
                 except SlotValue.DoesNotExist:
                     # 创建新记录
                     slot_value = SlotValue.create(
-                        conversation_id=conversation_id,
-                        slot=slot_def,
-                        value=str(slot_info['value']),
+                        conversation=conversation_id,
+                        slot=slot_def,  
+                        slot_name=slot_name,
+                        extracted_value=str(slot_info['value']),
                         original_text=slot_info.get('original_text', ''),
                         confidence=slot_info.get('confidence'),
                         extraction_method=slot_info.get('source', 'llm'),
-                        normalized_value=str(slot_info['value']),
-                        is_validated=slot_info.get('is_validated', True),
+                        validation_status='valid' if slot_info.get('is_validated', True) else 'pending',
                         validation_error=slot_info.get('validation_error')
                     )
+                    
+                    # 调用标准化方法
+                    slot_value.normalize_value()
                     
                     saved_slots.append({
                         'slot_name': slot_name,
@@ -1108,7 +1128,7 @@ class SlotService:
             slot_values = list(
                 SlotValue.select(SlotValue, Slot)
                 .join(Slot)
-                .where(SlotValue.conversation_id == conversation_id)
+                .where(SlotValue.conversation == conversation_id)
                 .order_by(SlotValue.created_at)
             )
             
@@ -1231,12 +1251,22 @@ class SlotService:
                                     slot_definitions: List[Slot]) -> List[str]:
         """使用依赖图获取缺失槽位列表"""
         try:
-            # 获取当前槽位值
-            current_values = {
-                name: info.get('value') if isinstance(info, dict) else info
-                for name, info in validated_slots.items()
-                if info is not None
-            }
+            # 获取当前槽位值 - 改进逻辑，考虑多个值字段
+            current_values = {}
+            for name, info in validated_slots.items():
+                if info is not None:
+                    if isinstance(info, dict):
+                        # 检查多个可能的值字段
+                        has_value = (
+                            info.get('value') or
+                            info.get('extracted_value') or
+                            info.get('normalized_value') or
+                            info.get('original_text')
+                        )
+                        if has_value:
+                            current_values[name] = has_value
+                    else:
+                        current_values[name] = info
             
             # 使用依赖图获取下一个可填充的槽位
             fillable_slots = dependency_graph.get_next_fillable_slots(current_values)
@@ -1948,3 +1978,72 @@ class SlotService:
             entity_id=slot_id,
             limit=limit
         )
+    
+    async def get_required_slots(self, intent_id: int) -> List[str]:
+        """
+        获取意图的必需槽位名称列表
+        
+        Args:
+            intent_id: 意图ID
+            
+        Returns:
+            List[str]: 必需槽位名称列表
+        """
+        try:
+            # 从数据库查询该意图的必需槽位
+            required_slots = list(
+                Slot.select(Slot.slot_name)
+                .where(Slot.intent_id == intent_id)
+                .where(Slot.is_required == True)
+                .order_by(Slot.sort_order)
+            )
+            
+            slot_names = [slot.slot_name for slot in required_slots]
+            logger.debug(f"获取意图{intent_id}的必需槽位: {slot_names}")
+            return slot_names
+            
+        except Exception as e:
+            logger.error(f"获取必需槽位失败: intent_id={intent_id}, 错误: {e}")
+            return []
+
+
+# 全局槽位服务实例
+slot_service_instance: Optional[SlotService] = None
+
+
+def get_slot_service() -> SlotService:
+    """
+    获取槽位服务实例（同步版本，仅用于兼容性）
+    
+    Returns:
+        SlotService: 槽位服务实例
+    """
+    global slot_service_instance
+    if slot_service_instance is None:
+        # 简单的同步初始化，不使用缓存服务
+        slot_service_instance = SlotService(cache_service=None, nlu_engine=None)
+    return slot_service_instance
+
+
+async def get_slot_service_async(cache_service: CacheService = None, 
+                               nlu_engine: NLUEngine = None) -> SlotService:
+    """
+    异步获取槽位服务实例
+    
+    Args:
+        cache_service: 缓存服务实例
+        nlu_engine: NLU引擎实例
+        
+    Returns:
+        SlotService: 槽位服务实例
+    """
+    global slot_service_instance
+    if slot_service_instance is None:
+        if cache_service is None:
+            from src.services.cache_service import get_cache_service
+            cache_service = await get_cache_service()
+        if nlu_engine is None:
+            from src.core.nlu_engine import nlu_engine as default_nlu_engine
+            nlu_engine = default_nlu_engine
+        slot_service_instance = SlotService(cache_service, nlu_engine)
+    return slot_service_instance

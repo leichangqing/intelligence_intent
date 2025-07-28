@@ -132,6 +132,11 @@ curl -X POST "http://localhost:8000/api/v1/chat/interact" \
   }'
 ```
 
+#补充
+curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{"session_id":"sess_b6d1d7b50028","user_id":"enterprise_user_001","input":"武汉"}'
+
 #### 完整业务上下文测试
 ```bash
 curl -X POST "http://localhost:8000/api/v1/chat/interact" \

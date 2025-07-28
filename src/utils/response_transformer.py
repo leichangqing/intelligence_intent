@@ -89,7 +89,7 @@ class ResponseTransformer:
                         transformed_slots[slot_name] = slot_data
                     else:
                         # 如果是SlotInfo对象，转换为字典
-                        transformed_slots[slot_name] = slot_data.dict()
+                        transformed_slots[slot_name] = slot_data.model_dump(mode='json')
             
             # 构建标准化数据
             response_data = {

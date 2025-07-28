@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from datetime import datetime
 from enum import Enum
 
-from ..core.error_handler import ErrorDetail, ErrorCode
+from src.core.error_handler import ErrorDetail, ErrorCode
 
 T = TypeVar('T')
 

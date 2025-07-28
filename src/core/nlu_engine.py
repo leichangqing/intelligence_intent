@@ -7,6 +7,7 @@ import json
 import asyncio
 import aiohttp
 from datetime import datetime
+from decimal import Decimal
 
 from src.config.settings import settings
 from src.models.intent import Intent
@@ -16,6 +17,21 @@ from src.schemas.intent_recognition import IntentRecognitionResult
 from src.core.confidence_manager import ConfidenceManager, ConfidenceSource, ConfidenceScore
 
 logger = get_logger(__name__)
+
+
+class DecimalEncoder(json.JSONEncoder):
+    """自定义JSON编码器，处理Decimal和datetime类型"""
+    def default(self, obj):
+        if isinstance(obj, Decimal):
+            return float(obj)
+        elif isinstance(obj, datetime):
+            return obj.isoformat()
+        return super().default(obj)
+
+
+def safe_json_dumps(obj, **kwargs) -> str:
+    """安全的JSON序列化，处理Decimal类型"""
+    return json.dumps(obj, cls=DecimalEncoder, **kwargs)
 
 
 class CustomLLM:
@@ -290,7 +306,7 @@ class NLUEngine:
         # 构建上下文信息
         context_text = ""
         if context:
-            context_text = f"对话上下文：{json.dumps(context, ensure_ascii=False)}\n"
+            context_text = f"对话上下文：{safe_json_dumps(context, ensure_ascii=False)}\n"
         
         prompt = f"""你是一个智能意图识别助手。请分析用户输入的文本，识别其真实意图。
 
@@ -854,7 +870,7 @@ class NLUEngine:
             data = {
                 'locale': 'zh_CN',
                 'text': text,
-                'dims': json.dumps(dims)
+                'dims': safe_json_dumps(dims)
             }
             
             async with self._session.post(
@@ -1285,9 +1301,11 @@ class NLUEngine:
             if self.llm:
                 llm_response = await self.llm._acall(slots_prompt)
                 slots_result = await self._parse_slots_response(llm_response)
+                logger.info(f"LLM槽位提取结果: {slots_result}")
             else:
                 # 简单的实体映射到槽位
                 slots_result = self._map_entities_to_slots(entities, slot_definitions)
+                logger.info(f"实体映射结果: {slots_result}")
             
             return slots_result
             
@@ -1317,7 +1335,7 @@ class NLUEngine:
         # 构建上下文信息
         context_text = ""
         if context:
-            context_text = f"对话上下文：{json.dumps(context, ensure_ascii=False)}\n"
+            context_text = f"对话上下文：{safe_json_dumps(context, ensure_ascii=False)}\n"
         
         prompt = f"""请从用户输入中提取指定的槽位信息。
 
@@ -1378,18 +1396,38 @@ class NLUEngine:
                 # 简单的类型映射
                 for entity in entities:
                     entity_type = entity['entity']
+                    entity_value = entity.get('value')
+                    entity_text = entity.get('text', '')
+                    
+                    # 调试日志
+                    logger.info(f"尝试映射: slot={slot_name}({slot_type}) <- entity={entity_text}({entity_type})")
                     
                     # 基于类型匹配
                     if ((slot_type.upper() == 'NUMBER' and entity_type == 'number') or
                         (slot_type.upper() == 'TIME' and entity_type == 'time') or
+                        (slot_type.upper() == 'DATE' and entity_type == 'time') or
                         (slot_type.upper() == 'PHONE' and entity_type == 'phone-number') or
-                        (slot_type.upper() == 'EMAIL' and entity_type == 'email')):
+                        (slot_type.upper() == 'EMAIL' and entity_type == 'email') or
+                        (slot_type.upper() == 'LOCATION' and entity_type == 'location') or
+                        (slot_type.upper() == 'CITY' and entity_type == 'location') or
+                        (slot_type.upper() == 'TEXT' and entity_type in ['location', 'person', 'organization', 'misc'])):
+                        
+                        # 使用entity的text作为value，如果entity没有value字段
+                        final_value = entity_value if entity_value is not None else entity_text
+                        
+                        # 对于日期类型，优先使用original_text进行标准化
+                        if slot_type.upper() == 'DATE' and entity_text:
+                            # 使用原始文本而不是解析后的值，让后续的标准化处理
+                            final_value = entity_text
+                            logger.info(f"日期槽位使用原始文本: {entity_text}")
+                        
+                        logger.info(f"映射成功: {slot_name} = {final_value} (从实体: {entity_text})")
                         
                         slots_result[slot_name] = {
-                            'value': entity['value'],
+                            'value': final_value,
                             'confidence': entity.get('confidence', 0.8),
                             'source': 'entity',
-                            'original_text': entity.get('text', '')
+                            'original_text': entity_text
                         }
                         break
             

@@ -9,7 +9,8 @@ from dataclasses import dataclass
 from enum import Enum
 import logging
 
-from ..models.slot import Slot, SlotDependency
+from ..models.slot import Slot
+from ..models.slot_value import SlotDependency
 from ..utils.logger import get_logger
 
 logger = get_logger(__name__)

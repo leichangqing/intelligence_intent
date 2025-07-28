@@ -154,6 +154,7 @@ class RagflowConfig(CommonModel):
 class FeatureFlag(CommonModel):
     """功能开关表"""
     
+    id = BigAutoField(primary_key=True)
     flag_name = CharField(max_length=100, unique=True, verbose_name="功能名称")
     is_enabled = BooleanField(default=False, verbose_name="是否启用")
     description = TextField(null=True, verbose_name="功能描述")

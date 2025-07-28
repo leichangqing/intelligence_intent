@@ -39,9 +39,9 @@ def setup_exception_handlers(app: FastAPI):
                 code=exc.status_code,
                 message=str(exc.detail),
                 success=False,
-                timestamp=datetime.utcnow().isoformat(),
+                timestamp=datetime.utcnow(),
                 request_id=_get_request_id(request)
-            ).dict()
+            ).model_dump(mode='json')
         )
     
     @app.exception_handler(StarletteHTTPException)
@@ -56,9 +56,9 @@ def setup_exception_handlers(app: FastAPI):
                 code=exc.status_code,
                 message=str(exc.detail),
                 success=False,
-                timestamp=datetime.utcnow().isoformat(),
+                timestamp=datetime.utcnow(),
                 request_id=_get_request_id(request)
-            ).dict()
+            ).model_dump(mode='json')
         )
     
     @app.exception_handler(RequestValidationError)
@@ -76,19 +76,21 @@ def setup_exception_handlers(app: FastAPI):
         
         logger.warning(f"参数验证失败: {error_message} - {request.url}")
         
+        response_obj = StandardResponse(
+            code=422,
+            message="请求参数验证失败",
+            success=False,
+            data={
+                "validation_errors": error_details,
+                "details": error_message
+            },
+            timestamp=datetime.utcnow(),
+            request_id=_get_request_id(request)
+        )
+        
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            content=StandardResponse(
-                code=422,
-                message="请求参数验证失败",
-                success=False,
-                data={
-                    "validation_errors": error_details,
-                    "details": error_message
-                },
-                timestamp=datetime.utcnow().isoformat(),
-                request_id=_get_request_id(request)
-            ).dict()
+            content=response_obj.model_dump(mode='json')  # 使用model_dump而不是dict()
         )
     
     @app.exception_handler(ValidationError)
@@ -115,9 +117,9 @@ def setup_exception_handlers(app: FastAPI):
                     "validation_errors": error_details,
                     "details": error_message
                 },
-                timestamp=datetime.utcnow().isoformat(),
+                timestamp=datetime.utcnow(),
                 request_id=_get_request_id(request)
-            ).dict()
+            ).model_dump(mode='json')
         )
     
     @app.exception_handler(ValueError)
@@ -136,9 +138,9 @@ def setup_exception_handlers(app: FastAPI):
                     "error_type": "ValueError",
                     "details": str(exc)
                 },
-                timestamp=datetime.utcnow().isoformat(),
+                timestamp=datetime.utcnow(),
                 request_id=_get_request_id(request)
-            ).dict()
+            ).model_dump(mode='json')
         )
     
     @app.exception_handler(KeyError)
@@ -158,9 +160,9 @@ def setup_exception_handlers(app: FastAPI):
                     "missing_key": str(exc),
                     "details": f"缺少必需字段: {str(exc)}"
                 },
-                timestamp=datetime.utcnow().isoformat(),
+                timestamp=datetime.utcnow(),
                 request_id=_get_request_id(request)
-            ).dict()
+            ).model_dump(mode='json')
         )
     
     @app.exception_handler(PermissionError)
@@ -186,9 +188,9 @@ def setup_exception_handlers(app: FastAPI):
                     "error_type": "PermissionError",
                     "details": "您没有执行此操作的权限"
                 },
-                timestamp=datetime.utcnow().isoformat(),
+                timestamp=datetime.utcnow(),
                 request_id=_get_request_id(request)
-            ).dict()
+            ).model_dump(mode='json')
         )
     
     @app.exception_handler(TimeoutError)
@@ -207,9 +209,9 @@ def setup_exception_handlers(app: FastAPI):
                     "error_type": "TimeoutError",
                     "details": "请求处理时间过长，请稍后重试"
                 },
-                timestamp=datetime.utcnow().isoformat(),
+                timestamp=datetime.utcnow(),
                 request_id=_get_request_id(request)
-            ).dict()
+            ).model_dump(mode='json')
         )
     
     @app.exception_handler(ConnectionError)
@@ -228,9 +230,9 @@ def setup_exception_handlers(app: FastAPI):
                     "error_type": "ConnectionError",
                     "details": "外部服务连接失败，请稍后重试"
                 },
-                timestamp=datetime.utcnow().isoformat(),
+                timestamp=datetime.utcnow(),
                 request_id=_get_request_id(request)
-            ).dict()
+            ).model_dump(mode='json')
         )
     
     @app.exception_handler(Exception)
@@ -268,9 +270,9 @@ def setup_exception_handlers(app: FastAPI):
                     "details": "服务器处理请求时发生错误，请稍后重试",
                     "support_info": "如果问题持续存在，请联系技术支持"
                 },
-                timestamp=datetime.utcnow().isoformat(),
+                timestamp=datetime.utcnow(),
                 request_id=_get_request_id(request)
-            ).dict()
+            ).model_dump(mode='json')
         )
 
 
@@ -405,9 +407,9 @@ def register_custom_exception_handlers(app: FastAPI):
                 message=exc.message,
                 success=False,
                 data=exc.details,
-                timestamp=datetime.utcnow().isoformat(),
+                timestamp=datetime.utcnow(),
                 request_id=_get_request_id(request)
-            ).dict()
+            ).model_dump(mode='json')
         )
     
     @app.exception_handler(ConfigurationError)
@@ -426,9 +428,9 @@ def register_custom_exception_handlers(app: FastAPI):
                     "config_key": exc.config_key,
                     "details": "系统配置存在问题，请联系管理员"
                 },
-                timestamp=datetime.utcnow().isoformat(),
+                timestamp=datetime.utcnow(),
                 request_id=_get_request_id(request)
-            ).dict()
+            ).model_dump(mode='json')
         )
     
     @app.exception_handler(IntentRecognitionError)
@@ -448,9 +450,9 @@ def register_custom_exception_handlers(app: FastAPI):
                     "confidence": exc.confidence,
                     "details": exc.message
                 },
-                timestamp=datetime.utcnow().isoformat(),
+                timestamp=datetime.utcnow(),
                 request_id=_get_request_id(request)
-            ).dict()
+            ).model_dump(mode='json')
         )
     
     @app.exception_handler(SlotExtractionError)
@@ -470,9 +472,9 @@ def register_custom_exception_handlers(app: FastAPI):
                     "slot_value": exc.slot_value,
                     "details": exc.message
                 },
-                timestamp=datetime.utcnow().isoformat(),
+                timestamp=datetime.utcnow(),
                 request_id=_get_request_id(request)
-            ).dict()
+            ).model_dump(mode='json')
         )
     
     @app.exception_handler(ExternalServiceError)
@@ -492,9 +494,9 @@ def register_custom_exception_handlers(app: FastAPI):
                     "status_code": exc.status_code,
                     "details": "外部服务连接失败，请稍后重试"
                 },
-                timestamp=datetime.utcnow().isoformat(),
+                timestamp=datetime.utcnow(),
                 request_id=_get_request_id(request)
-            ).dict()
+            ).model_dump(mode='json')
         )
 
 

@@ -7,7 +7,7 @@ from datetime import datetime
 from pydantic import BaseModel
 
 from src.schemas.chat import SlotInfo
-from src.models.slot import SlotValue
+from src.models.slot_value import SlotValue
 
 
 class SlotDataTransformer:
@@ -27,16 +27,22 @@ class SlotDataTransformer:
         result = {}
         
         for slot_value in slot_values:
+            # 确保槽位值不为None
+            extracted_val = slot_value.extracted_value or ""
+            normalized_val = slot_value.normalized_value or extracted_val
+            final_value = normalized_val or extracted_val
+            
             slot_info = SlotInfo(
                 name=slot_value.slot_name,
-                extracted_value=slot_value.extracted_value,
-                normalized_value=slot_value.normalized_value or slot_value.extracted_value,
+                extracted_value=extracted_val,
+                normalized_value=normalized_val,
                 confidence=float(slot_value.confidence) if slot_value.confidence else None,
                 extraction_method=slot_value.extraction_method,
                 original_text=slot_value.original_text,
                 is_confirmed=slot_value.validation_status == 'valid',
+                validation=None,  # 确保validation字段为None
                 # 向后兼容字段
-                value=slot_value.normalized_value or slot_value.extracted_value,
+                value=final_value,
                 source=slot_value.extraction_method,
                 is_validated=slot_value.validation_status == 'valid',
                 validation_error=slot_value.validation_error if slot_value.validation_status == 'invalid' else None
@@ -105,6 +111,7 @@ class SlotDataTransformer:
                     extraction_method=slot_data.get('source'),
                     original_text=slot_data.get('original_text'),
                     is_confirmed=slot_data.get('is_validated', True),
+                    validation=None,  # 确保validation字段为None
                     # 向后兼容字段
                     value=slot_data.get('value'),
                     source=slot_data.get('source'),
@@ -120,10 +127,12 @@ class SlotDataTransformer:
                     confidence=None,
                     extraction_method='cache',
                     is_confirmed=True,
+                    validation=None,  # 确保validation字段为None
                     # 向后兼容字段
                     value=slot_data,
                     source='cache',
-                    is_validated=True
+                    is_validated=True,
+                    validation_error=None  # 确保validation_error为None
                 )
             result[slot_name] = slot_info
             
@@ -192,10 +201,18 @@ class SlotDataTransformer:
                 
             slot_def = slot_definitions[slot_name]
             
-            # 检查必填槽位
-            if slot_def.get('is_required', False) and not slot_info.value:
-                errors[slot_name] = f"必填槽位不能为空"
-                continue
+            # 检查必填槽位 - 改进验证逻辑，考虑多个值字段
+            if slot_def.get('is_required', False):
+                # 检查是否有任何形式的值（包括原始文本）
+                has_value = (
+                    slot_info.value or
+                    slot_info.extracted_value or 
+                    slot_info.normalized_value or
+                    slot_info.original_text
+                )
+                if not has_value:
+                    errors[slot_name] = f"必填槽位不能为空"
+                    continue
                 
             # 检查数据类型
             slot_type = slot_def.get('slot_type', 'text')

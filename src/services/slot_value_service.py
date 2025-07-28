@@ -134,7 +134,7 @@ class SlotValueService:
             slots = {}
             for slot_value in slot_values:
                 slots[slot_value.slot_name] = {
-                    'value': slot_value.value,
+                    'value': slot_value.get_final_value(),
                     'confidence': slot_value.confidence,
                     'status': slot_value.validation_status,
                     'created_at': slot_value.created_at
@@ -477,6 +477,15 @@ class SlotValueService:
                     slot_value.set_invalid("手机号码格式不正确")
                     return {'is_valid': False, 'error': '格式错误'}
             
+            elif slot.slot_type == 'date':
+                # 日期类型验证和标准化
+                try:
+                    normalized_date = await self._normalize_date_value(extracted_value)
+                    slot_value.set_valid(normalized_date)
+                except Exception as e:
+                    slot_value.set_invalid(f"日期格式不正确: {str(e)}")
+                    return {'is_valid': False, 'error': '日期格式错误'}
+            
             elif slot.slot_type == 'text':
                 # 文本长度验证
                 text_length = len(extracted_value)
@@ -505,6 +514,57 @@ class SlotValueService:
             self.logger.error(f"槽位值验证异常: {error_msg}")
             return {'is_valid': False, 'error': error_msg}
     
+    async def _normalize_date_value(self, value: str) -> str:
+        """
+        标准化日期值，将相对日期转换为具体日期
+        
+        Args:
+            value: 原始日期值
+            
+        Returns:
+            str: 标准化后的日期字符串 (YYYY-MM-DD格式)
+        """
+        try:
+            from datetime import timedelta
+            
+            if isinstance(value, str):
+                value_clean = value.strip()
+                
+                # 处理相对日期
+                if '今天' in value_clean or '今日' in value_clean:
+                    return datetime.now().strftime('%Y-%m-%d')
+                elif '明天' in value_clean or '明日' in value_clean:
+                    return (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
+                elif '后天' in value_clean:
+                    return (datetime.now() + timedelta(days=2)).strftime('%Y-%m-%d')
+                elif '昨天' in value_clean or '昨日' in value_clean:
+                    return (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
+                elif '前天' in value_clean:
+                    return (datetime.now() - timedelta(days=2)).strftime('%Y-%m-%d')
+                
+                # 尝试解析其他日期格式
+                # 这里可以添加更多的日期格式解析逻辑
+                # 如: 2024-01-15, 01/15/2024, 15-01-2024 等
+                
+                # 简单的YYYY-MM-DD格式检查
+                import re
+                if re.match(r'^\d{4}-\d{2}-\d{2}$', value_clean):
+                    # 验证日期是否有效
+                    try:
+                        datetime.strptime(value_clean, '%Y-%m-%d')
+                        return value_clean
+                    except ValueError:
+                        pass
+                
+                # 如果无法解析，返回原值
+                return value_clean
+            
+            return str(value)
+            
+        except Exception as e:
+            self.logger.warning(f"日期标准化失败: {value}, 错误: {str(e)}")
+            return str(value)
+    
     async def get_session_slot_values(self, session_id: str) -> Dict[str, Any]:
         """
         获取会话的所有槽位值
@@ -531,26 +591,41 @@ class SlotValueService:
             if not conversations:
                 return {}
             
-            # 获取最新对话的槽位值
-            latest_conversation = conversations[0]
+            # 获取会话中所有对话的槽位值
             slot_values = {}
             
-            # 查询该对话的所有已确认槽位值
+            # 查询该会话所有对话的有效槽位值
+            conversation_ids = [conv.id for conv in conversations]
             values = list(
                 SlotValue.select()
                 .join(Slot)
-                .where(SlotValue.conversation == latest_conversation)
-                .where(SlotValue.is_confirmed == True)
+                .where(SlotValue.conversation.in_(conversation_ids))
+                .where(SlotValue.validation_status.in_(['valid', 'pending', 'corrected']))
+                .order_by(SlotValue.created_at.desc())
             )
             
+            # 只保留每个槽位的最新值，避免重复，返回字典格式（兼容JSON序列化）
+            processed_slots = set()
             for slot_value in values:
-                slot_values[slot_value.slot.slot_name] = {
-                    'value': slot_value.get_final_value(),
-                    'confidence': slot_value.confidence or 0.0,
-                    'is_confirmed': slot_value.is_confirmed,
-                    'validation_status': slot_value.validation_status,
-                    'source_turn': getattr(slot_value, 'source_turn', 1)
-                }
+                slot_name = slot_value.slot.slot_name
+                if slot_name not in processed_slots:
+                    # 返回字典格式，避免SlotInfo对象的JSON序列化问题
+                    slot_info_dict = {
+                        'name': slot_name,
+                        'original_text': slot_value.original_text or '',
+                        'extracted_value': slot_value.extracted_value,
+                        'normalized_value': slot_value.normalized_value,
+                        'confidence': float(slot_value.confidence) if slot_value.confidence else 0.0,
+                        'extraction_method': slot_value.extraction_method or 'unknown',
+                        'validation': None,
+                        'is_confirmed': True,
+                        'value': slot_value.get_final_value(),
+                        'source': slot_value.extraction_method or 'unknown',
+                        'is_validated': slot_value.validation_status in ['valid', 'pending'],
+                        'validation_error': slot_value.validation_error
+                    }
+                    slot_values[slot_name] = slot_info_dict
+                    processed_slots.add(slot_name)
             
             return slot_values
             
@@ -592,9 +667,74 @@ class SlotValueService:
             bool: 是否保存成功
         """
         try:
-            # 这是一个占位方法，实际保存逻辑在extract_and_store_slots中处理
-            self.logger.debug(f"保存对话槽位: conversation_id={conversation_id}, 槽位数: {len(slots)}")
-            return True
+            if not slots:
+                return True
+            
+            from src.models.intent import Intent
+            from src.models.slot import Slot
+            from src.models.conversation import Conversation
+            
+            # 获取意图和对话对象
+            try:
+                intent_obj = Intent.get(Intent.intent_name == intent)
+                conversation_obj = Conversation.get(Conversation.id == conversation_id)
+            except Exception as e:
+                self.logger.error(f"获取意图或对话对象失败: {str(e)}")
+                return False
+            
+            saved_count = 0
+            
+            self.logger.info(f"准备保存槽位值: {slots}")
+            
+            # 保存每个槽位值
+            for slot_name, slot_data in slots.items():
+                try:
+                    # 获取槽位定义
+                    slot_def = Slot.get(
+                        (Slot.intent == intent_obj) & 
+                        (Slot.slot_name == slot_name)
+                    )
+                    
+                    # 提取槽位值数据 - 处理SlotInfo对象
+                    if hasattr(slot_data, 'value'):  # SlotInfo对象
+                        extracted_value = slot_data.value or slot_data.extracted_value
+                        original_text = slot_data.original_text or ''
+                        confidence = slot_data.confidence or 0.0
+                        extraction_method = slot_data.source or slot_data.extraction_method or 'llm'
+                    else:  # 字典格式
+                        extracted_value = slot_data.get('value') or slot_data.get('extracted_value')
+                        original_text = slot_data.get('original_text', '')
+                        confidence = slot_data.get('confidence', 0.0)
+                        extraction_method = slot_data.get('source', 'llm')
+                    
+                    if extracted_value is not None:
+                        # 更新或创建槽位值
+                        slot_value = SlotValue.update_or_create_slot_value(
+                            conversation=conversation_obj,
+                            slot=slot_def,
+                            extracted_value=str(extracted_value),
+                            original_text=original_text,
+                            confidence=confidence,
+                            extraction_method=extraction_method
+                        )
+                        
+                        # 调用标准化方法
+                        slot_value.normalize_value()
+                        slot_value.save()
+                        
+                        saved_count += 1
+                        self.logger.debug(f"保存槽位值成功: {slot_name} = {extracted_value}")
+                        
+                except Slot.DoesNotExist:
+                    self.logger.warning(f"槽位定义不存在: {slot_name}")
+                    continue
+                except Exception as e:
+                    self.logger.error(f"保存槽位值失败: {slot_name}, 错误: {str(e)}")
+                    continue
+            
+            self.logger.info(f"保存对话槽位完成: conversation_id={conversation_id}, 成功={saved_count}/{len(slots)}")
+            return saved_count > 0
+            
         except Exception as e:
             self.logger.error(f"保存对话槽位失败: {str(e)}")
             return False

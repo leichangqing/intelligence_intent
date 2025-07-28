@@ -222,8 +222,8 @@ class UserPreferenceService:
             'time_format': '24h',
             'auto_logout_minutes': 120,
             # 业务相关默认配置
-            'preferred_airline': None,
-            'preferred_hotel_chain': None,
+            'preferred_airline': '',
+            'preferred_hotel_chain': '',
             'default_travel_class': 'economy',
             'price_alert_enabled': False
         }

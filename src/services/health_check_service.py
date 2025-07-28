@@ -10,7 +10,8 @@ from enum import Enum
 
 from src.models.base import database
 from src.models.intent import Intent
-from src.models.slot import Slot, SlotValue
+from src.models.slot import Slot
+from src.models.slot_value import SlotValue
 from src.models.conversation import Conversation
 from src.models.audit import ConfigAuditLog, CacheInvalidationLog
 from src.services.cache_service import CacheService

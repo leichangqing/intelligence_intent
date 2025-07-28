@@ -10,7 +10,7 @@ import hashlib
 from collections import defaultdict
 
 from ..models.conversation import Conversation, Session
-from ..models.slot import SlotValue
+from ..models.slot_value import SlotValue
 from ..services.cache_service import CacheService
 from ..utils.logger import get_logger
 
@@ -41,9 +41,14 @@ class UserProfileService:
         cached_profile = await self.cache_service.get(cache_key)
         if cached_profile:
             try:
-                return json.loads(cached_profile) if isinstance(cached_profile, str) else cached_profile
-            except json.JSONDecodeError:
-                logger.warning(f"用户档案缓存解析失败: {user_id}")
+                if isinstance(cached_profile, str):
+                    return json.loads(cached_profile)
+                elif isinstance(cached_profile, dict):
+                    return cached_profile
+                else:
+                    logger.warning(f"用户档案缓存类型异常: {user_id}, type: {type(cached_profile)}")
+            except (json.JSONDecodeError, TypeError) as e:
+                logger.warning(f"用户档案缓存解析失败: {user_id}, 错误: {e}")
         
         # 构建用户档案
         profile = await self._build_user_profile(user_id)
@@ -240,10 +245,12 @@ class UserProfileService:
                 if conv.status == 'completed':
                     completed_intents += 1
                 
-                # 会话时长（如果有结束时间）
-                if conv.end_time and conv.created_at:
-                    duration = (conv.end_time - conv.created_at).total_seconds() / 60
-                    session_durations.append(duration)
+                # 会话时长估算（使用 updated_at 作为结束时间的近似值）
+                if conv.updated_at and conv.created_at:
+                    duration = (conv.updated_at - conv.created_at).total_seconds() / 60
+                    # 只有当时长大于0且小于合理值时才计入统计（避免异常数据）
+                    if 0 < duration < 1440:  # 小于24小时
+                        session_durations.append(duration)
                 
                 # 时段统计
                 hourly_interactions[conv.created_at.hour] += 1

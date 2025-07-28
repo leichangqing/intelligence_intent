@@ -37,6 +37,7 @@ class QuestionStyle(Enum):
     PROFESSIONAL = "professional"      # 专业
     CONCISE = "concise"               # 简洁
     DETAILED = "detailed"             # 详细
+    DIRECT = "direct"                 # 直接
 
 
 @dataclass

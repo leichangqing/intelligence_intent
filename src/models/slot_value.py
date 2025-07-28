@@ -3,6 +3,7 @@
 用于替代conversations表中的slots_filled和slots_missing字段
 """
 from peewee import *
+from playhouse.mysql_ext import JSONField
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 
@@ -255,3 +256,152 @@ class SlotValue(CommonModel):
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
         }
+    
+    def normalize_value(self) -> None:
+        """标准化槽位值"""
+        if self.extracted_value and not self.normalized_value:
+            # 基本的值标准化逻辑
+            normalized = str(self.extracted_value).strip()
+            
+            # 根据槽位类型进行标准化
+            if hasattr(self.slot, 'slot_type'):
+                if self.slot.slot_type == 'date':
+                    # 日期标准化逻辑
+                    normalized = self._normalize_date(normalized)
+                elif self.slot.slot_type == 'number':
+                    # 数字标准化逻辑
+                    try:
+                        float(normalized)  # 验证是数字
+                    except ValueError:
+                        pass
+            
+            self.normalized_value = normalized
+    
+    def _normalize_date(self, date_text: str) -> str:
+        """标准化日期文本"""
+        from datetime import datetime, timedelta
+        import re
+        
+        date_text = date_text.strip()
+        today = datetime.now()
+        
+        # 处理相对日期
+        if date_text in ['今天', '今日']:
+            return today.strftime('%Y-%m-%d')
+        elif date_text in ['明天', '明日']:
+            return (today + timedelta(days=1)).strftime('%Y-%m-%d')
+        elif date_text in ['后天']:
+            return (today + timedelta(days=2)).strftime('%Y-%m-%d')
+        elif date_text in ['昨天', '昨日']:
+            return (today - timedelta(days=1)).strftime('%Y-%m-%d')
+        elif date_text in ['前天']:
+            return (today - timedelta(days=2)).strftime('%Y-%m-%d')
+        
+        # 处理"X天后"、"X天前"的格式
+        pattern_after = r'(\d+)天后'
+        pattern_before = r'(\d+)天前'
+        
+        match_after = re.match(pattern_after, date_text)
+        if match_after:
+            days = int(match_after.group(1))
+            return (today + timedelta(days=days)).strftime('%Y-%m-%d')
+        
+        match_before = re.match(pattern_before, date_text)
+        if match_before:
+            days = int(match_before.group(1))
+            return (today - timedelta(days=days)).strftime('%Y-%m-%d')
+        
+        # 处理具体日期格式，如果已经是标准格式就直接返回
+        try:
+            # 尝试解析各种日期格式
+            for fmt in ['%Y-%m-%d', '%Y/%m/%d', '%m/%d', '%m-%d']:
+                try:
+                    parsed_date = datetime.strptime(date_text, fmt)
+                    if fmt in ['%m/%d', '%m-%d']:  # 补全年份
+                        parsed_date = parsed_date.replace(year=today.year)
+                    return parsed_date.strftime('%Y-%m-%d')
+                except ValueError:
+                    continue
+        except:
+            pass
+        
+        # 如果无法解析，返回原始文本
+        return date_text
+    
+    def get_normalized_value(self) -> str:
+        """获取标准化后的值"""
+        return self.normalized_value or self.extracted_value
+
+
+class SlotDependency(CommonModel):
+    """槽位依赖关系表"""
+    
+    parent_slot_id = IntegerField(verbose_name="父槽位ID")
+    child_slot_id = IntegerField(verbose_name="子槽位ID")
+    dependency_type = CharField(max_length=50, default='required_if', verbose_name="依赖类型")
+    conditions = JSONField(null=True, verbose_name="依赖条件")
+    
+    class Meta:
+        table_name = 'slot_dependencies'
+        indexes = (
+            (('parent_slot_id', 'child_slot_id'), True),  # 联合唯一索引
+            (('dependency_type',), False),
+        )
+    
+    def get_condition(self) -> dict:
+        """获取依赖条件"""
+        if self.conditions:
+            return self.conditions if isinstance(self.conditions, dict) else {}
+        return {}
+    
+    def set_condition(self, condition: dict):
+        """设置依赖条件"""
+        self.conditions = condition
+    
+    def check_dependency(self, slot_values: dict):
+        """
+        检查依赖条件是否满足
+        
+        Args:
+            slot_values: 当前已提取的槽位值字典 {slot_name: value}
+        
+        Returns:
+            tuple: (是否满足, 错误信息)
+        """
+        try:
+            # 通过ID获取槽位对象
+            from .slot import Slot
+            parent_slot = Slot.get_by_id(self.parent_slot_id)
+            child_slot = Slot.get_by_id(self.child_slot_id)
+            
+            parent_slot_name = parent_slot.slot_name
+            child_slot_name = child_slot.slot_name
+        except Exception:
+            return False, "依赖关系中的槽位不存在"
+        
+        # 基本依赖检查：被依赖的槽位必须有值
+        parent_value = slot_values.get(parent_slot_name)
+        child_value = slot_values.get(child_slot_name)
+        
+        if self.dependency_type == 'required_if':
+            # 如果父槽位有值，子槽位也必须有值
+            if parent_value and not child_value:
+                return False, f"当{parent_slot_name}有值时，{child_slot_name}也必须有值"
+        
+        elif self.dependency_type == 'conditional':
+            # 基于条件的依赖
+            condition = self.get_condition()
+            expected_value = condition.get('value')
+            
+            if parent_value == expected_value and not child_value:
+                return False, f"当{parent_slot_name}={expected_value}时，{child_slot_name}必须有值"
+        
+        elif self.dependency_type == 'mutual_exclusive':
+            # 互斥：两个槽位不能同时有值
+            if parent_value and child_value:
+                return False, f"{parent_slot_name}和{child_slot_name}不能同时有值"
+        
+        return True, ""
+    
+    def __str__(self):
+        return f"SlotDependency({self.parent_slot_id}->{self.child_slot_id}:{self.dependency_type})"

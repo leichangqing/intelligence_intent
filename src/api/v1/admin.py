@@ -9,7 +9,8 @@ import json
 from src.api.dependencies import require_admin_auth, get_cache_service_dependency
 from src.schemas.common import StandardResponse
 from src.models.intent import Intent
-from src.models.slot import Slot, SlotValue
+from src.models.slot import Slot
+from src.models.slot_value import SlotValue
 from src.models.function import Function, FunctionCall, FunctionParameter
 from src.models.config import SystemConfig, FeatureFlag, RagflowConfig
 from src.models.template import PromptTemplate

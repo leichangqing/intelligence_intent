@@ -1,0 +1,35 @@
+# 多轮间隔
+# 1 
+curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "user_003",
+    "input": "我想订一张明天去上海的机票"
+  }'
+
+  # 3
+  curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "session_id": "sess_4dd124a2497e",
+    "user_id": "user_003",
+    "input": "天天气怎么样"
+  }'
+
+  # 5
+  curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "session_id": "sess_4dd124a2497e",
+    "user_id": "user_003",
+    "input": "最近工作很忙"
+  }'
+
+  #7 槽位补充
+    curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "session_id": "sess_4dd124a2497e",
+    "user_id": "user_003",
+    "input": "武汉"
+  }'

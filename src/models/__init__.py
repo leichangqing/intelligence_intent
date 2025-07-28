@@ -3,7 +3,8 @@
 """
 from .base import BaseModel, CommonModel, AuditableModel, SoftDeleteModel
 from .intent import Intent
-from .slot import Slot, SlotDependency
+from .slot import Slot
+from .slot_value import SlotDependency
 from .slot_value import SlotValue
 from .conversation import User, Session, Conversation, IntentAmbiguity, IntentTransfer, UserContext
 from .conversation_status import ConversationStatus
@@ -13,7 +14,7 @@ from .response_type import ResponseType
 from .system_config import SystemConfig, RagflowConfig
 from .entity import EntityType, EntityDictionary
 from .extraction import SlotExtractionRule
-from .prompt_template import PromptTemplate
+from .template import PromptTemplate
 from .audit import SecurityAuditLog
 from .async_log import AsyncLogQueue
 from .cache import CacheInvalidationLog
