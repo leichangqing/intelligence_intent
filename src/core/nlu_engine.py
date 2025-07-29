@@ -1337,14 +1337,35 @@ class NLUEngine:
         if context:
             context_text = f"对话上下文：{safe_json_dumps(context, ensure_ascii=False)}\n"
         
+        # 构建已有槽位信息
+        existing_slots_text = ""
+        if context and context.get('existing_slots'):
+            existing_slots = context['existing_slots']
+            if existing_slots:
+                existing_desc = []
+                for slot_name, slot_value in existing_slots.items():
+                    value = slot_value.get('value', slot_value) if isinstance(slot_value, dict) else slot_value
+                    existing_desc.append(f"- {slot_name}: {value}")
+                existing_slots_text = f"已有槽位值：\n" + "\n".join(existing_desc) + "\n"
+        
         prompt = f"""请从用户输入中提取指定的槽位信息。
 
 需要提取的槽位：
 {slots_text}
 
 {entities_text}
+{existing_slots_text}
 {context_text}
 用户输入："{text}"
+
+重要提示：
+- 如果用户提到"往返"、"往返机票"、"来回"，应该提取trip_type为"round_trip"
+- 如果用户提到"返程"、"回来"、"回程"、"回去"等词语，相关时间应该提取为return_date
+- 如果用户提到"出发"、"去程"等词语，相关时间应该提取为departure_date  
+- 如果用户说"三天后回来"，应该只提取return_date，不要提取departure_date
+- 已有槽位值不要重复提取，除非用户明确要修改
+- 如果用户输入中同时包含返程信息（如"回来"），不要覆盖已有的departure_date
+- 优先考虑用户输入的语义和上下文
 
 请分析用户输入，提取相应的槽位值，返回JSON格式：
 {{

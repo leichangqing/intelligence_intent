@@ -1,0 +1,20 @@
+
+# 第1轮：开始订票
+  curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+    -H "Content-Type: application/json" \
+    -d '{"user_id": "2-user-01", "input": "我想订一张明天去上海的机票"}'
+
+  # 第2轮：切换到天气查询  
+  curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+    -H "Content-Type: application/json" \
+    -d '{"session_id": "sess_5fd13ab92d73", "user_id": "2-user-01", "input": "今天天气怎么样"}'
+
+  # 第3轮：切换到余额查询
+  curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+    -H "Content-Type: application/json" \
+    -d '{"session_id": "sess_5fd13ab92d73", "user_id": "2-user-01", "input": "查一下银行卡余额"}'
+
+  # 第4轮：恢复订票意图并补充槽位
+  curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+    -H "Content-Type: application/json" \
+    -d '{"session_id": "sess_5fd13ab92d73", "user_id": "2-user-01", "input": "继续订票，从武汉出发"}'

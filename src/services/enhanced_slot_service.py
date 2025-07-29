@@ -269,21 +269,27 @@ class EnhancedSlotService:
                 elif (not extracted_value or extracted_value == '') and (not original_text or original_text == ''):
                     continue
                 
+                # 使用LLM提取结果中的标准化值
+                final_value = slot_value.get('value', extracted_value)  # 优先使用LLM标准化的值
+                
                 slot_info = SlotInfo(
                     name=slot_name,
                     extracted_value=extracted_value,
-                    normalized_value=extracted_value,  # 初始设为extracted_value，后续会被normalization更新
+                    normalized_value=final_value,  # 使用LLM标准化后的值
                     confidence=slot_value.get('confidence'),
                     extraction_method=slot_value.get('source', 'nlu'),
                     original_text=original_text,
                     is_confirmed=slot_value.get('is_validated', True),
                     validation=None,  # 确保validation字段为None
                     # 向后兼容字段
-                    value=extracted_value,
+                    value=final_value,  # 使用标准化后的值
                     source=slot_value.get('source', 'nlu'),
                     is_validated=slot_value.get('is_validated', True),
                     validation_error=None  # 确保validation_error为None
                 )
+                
+                # 后备标准化处理：如果LLM没有正确标准化，手动处理
+                # slot_info = self._apply_fallback_normalization(slot_info, slot_definitions)  # 暂时禁用，避免未定义错误
             else:
                 # 简单值格式
                 slot_info = SlotInfo(
@@ -320,7 +326,13 @@ class EnhancedSlotService:
             # 获取槽位定义以了解槽位类型
             slot_definitions = await self._get_slot_definitions(intent)
             
-            for slot_name, slot_info in slots.items():
+            # 分离依赖槽位和非依赖槽位，先处理非依赖槽位
+            dependent_slots = ['return_date']  # 依赖其他槽位的槽位列表
+            independent_slots = {k: v for k, v in slots.items() if k not in dependent_slots}
+            dependent_slot_items = {k: v for k, v in slots.items() if k in dependent_slots}
+            
+            # 先处理非依赖槽位
+            for slot_name, slot_info in independent_slots.items():
                 # 跳过没有有效提取值的槽位
                 if not slot_info.extracted_value or slot_info.extracted_value == '':
                     continue
@@ -338,6 +350,36 @@ class EnhancedSlotService:
                 elif slot_type == 'number':
                     # 数字标准化，包括中文数字转换
                     normalized_value = self._normalize_number_value(slot_info.extracted_value)
+                    slot_info.normalized_value = normalized_value
+                    slot_info.value = normalized_value
+                elif slot_type == 'text' and slot_name == 'trip_type':
+                    # trip_type特殊处理
+                    if '往返' in slot_info.extracted_value or '来回' in slot_info.extracted_value:
+                        normalized_value = 'round_trip'
+                    else:
+                        normalized_value = 'single'
+                    slot_info.normalized_value = normalized_value
+                    slot_info.value = normalized_value
+                else:
+                    # 其他类型的基本标准化（去除首尾空格）
+                    normalized_value = str(slot_info.extracted_value).strip()
+                    slot_info.normalized_value = normalized_value
+                    slot_info.value = normalized_value
+            
+            # 再处理依赖槽位（此时非依赖槽位已经标准化）
+            for slot_name, slot_info in dependent_slot_items.items():
+                # 跳过没有有效提取值的槽位
+                if not slot_info.extracted_value or slot_info.extracted_value == '':
+                    continue
+                    
+                # 获取槽位类型
+                slot_def = slot_definitions.get(slot_name, {})
+                slot_type = slot_def.get('slot_type', 'text')
+                
+                # 应用类型特定的标准化，传入已更新的slots
+                if slot_type == 'date':
+                    normalized_value = await self._normalize_date_value(slot_info.extracted_value, slots)
+                    # 更新SlotInfo对象的normalized_value和value字段
                     slot_info.normalized_value = normalized_value
                     slot_info.value = normalized_value
                 else:
@@ -358,7 +400,7 @@ class EnhancedSlotService:
             logger.error(f"槽位值标准化失败: {str(e)}")
             return slots
     
-    async def _normalize_date_value(self, value: str) -> str:
+    async def _normalize_date_value(self, value: str, existing_slots: Dict[str, SlotInfo] = None) -> str:
         """
         标准化日期值，将相对日期转换为具体日期
         
@@ -374,7 +416,45 @@ class EnhancedSlotService:
             if isinstance(value, str):
                 value_clean = value.strip()
                 
-                # 处理相对日期
+                # 处理复合表达（如"三天后回来"）
+                if '回来' in value_clean or '返程' in value_clean or '回程' in value_clean:
+                    # 提取数字和时间单位
+                    import re
+                    match = re.search(r'(\d+|一|二|三|四|五|六|七|八|九|十)+(天|日)', value_clean)
+                    if match:
+                        # 获取参考日期（出发日期）
+                        reference_date = datetime.now()
+                        if existing_slots and 'departure_date' in existing_slots:
+                            dep_date = existing_slots['departure_date'].value
+                            try:
+                                # 尝试解析已有的出发日期
+                                if isinstance(dep_date, str) and dep_date != '三天后回来':
+                                    # 首先尝试标准日期格式
+                                    try:
+                                        reference_date = datetime.strptime(dep_date, '%Y-%m-%d')
+                                    except ValueError:
+                                        # 如果不是标准格式，手动处理常见格式
+                                        if '下周' in dep_date:
+                                            weekdays = {'一': 0, '二': 1, '三': 2, '四': 3, '五': 4, '六': 5, '日': 6, '天': 6}
+                                            for day_name, day_num in weekdays.items():
+                                                if day_name in dep_date:
+                                                    today = datetime.now()
+                                                    current_weekday = today.weekday()
+                                                    days_until_next_week = 7 - current_weekday + day_num
+                                                    reference_date = today + timedelta(days=days_until_next_week)
+                                                    break
+                            except Exception as e:
+                                logger.warning(f"解析departure_date失败: {dep_date}, 错误: {str(e)}")
+                                pass
+                        
+                        # 提取天数
+                        num_text = match.group(1)
+                        chinese_nums = {'一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8, '九': 9, '十': 10}
+                        days = chinese_nums.get(num_text, int(num_text) if num_text.isdigit() else 3)
+                        
+                        return (reference_date + timedelta(days=days)).strftime('%Y-%m-%d')
+                
+                # 处理普通相对日期
                 if '今天' in value_clean or '今日' in value_clean:
                     return datetime.now().strftime('%Y-%m-%d')
                 elif '明天' in value_clean or '明日' in value_clean:
@@ -385,6 +465,17 @@ class EnhancedSlotService:
                     return (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
                 elif '前天' in value_clean:
                     return (datetime.now() - timedelta(days=2)).strftime('%Y-%m-%d')
+                
+                # 处理"下周X"格式
+                elif '下周' in value_clean:
+                    weekdays = {'一': 0, '二': 1, '三': 2, '四': 3, '五': 4, '六': 5, '日': 6, '天': 6}
+                    for day_name, day_num in weekdays.items():
+                        if day_name in value_clean:
+                            today = datetime.now()
+                            current_weekday = today.weekday()  # 0=Monday, 6=Sunday
+                            days_until_next_week = 7 - current_weekday + day_num
+                            target_date = today + timedelta(days=days_until_next_week)
+                            return target_date.strftime('%Y-%m-%d')
                 
                 # 尝试解析其他日期格式
                 import re
@@ -427,6 +518,12 @@ class EnhancedSlotService:
                 '五': '5', '六': '6', '七': '7', '八': '8', '九': '9',
                 '十': '10', '两': '2', '俩': '2'
             }
+            
+            # 首先尝试提取阿拉伯数字
+            import re
+            arabic_numbers = re.findall(r'\d+', value_clean)
+            if arabic_numbers:
+                return arabic_numbers[0]  # 返回第一个找到的数字
             
             # 处理包含量词的情况（如"一张"、"两位"、"三个"等）
             # 提取字符串中的中文数字部分
@@ -556,6 +653,116 @@ class EnhancedSlotService:
             logger.info(f"槽位更新事件: {event_data}")
         except Exception as e:
             logger.error(f"发布槽位更新事件失败: {str(e)}")
+    
+    def _apply_fallback_normalization(self, slot_info: SlotInfo, slot_definitions: List[Dict]) -> SlotInfo:
+        """应用后备标准化处理"""
+        try:
+            # 找到对应的槽位定义
+            slot_def = None
+            for definition in slot_definitions:
+                if definition.get('slot_name') == slot_info.name:
+                    slot_def = definition
+                    break
+            
+            if not slot_def:
+                return slot_info
+            
+            slot_type = slot_def.get('slot_type', '').lower()
+            slot_name = slot_info.name
+            
+            # 检查是否需要标准化
+            if slot_info.normalized_value == slot_info.extracted_value and slot_info.extracted_value:
+                # 只有当标准化值等于提取值时才进行后备标准化
+                original_value = slot_info.extracted_value
+                normalized_value = original_value
+                
+                # 数字类型特殊处理
+                if slot_type == 'number' and slot_name == 'passenger_count':
+                    normalized_value = self._normalize_passenger_count(original_value)
+                elif slot_type == 'number':
+                    normalized_value = self._normalize_number(original_value)
+                elif slot_type == 'date':
+                    normalized_value = self._normalize_date(original_value)
+                
+                # 如果标准化后的值不同，更新SlotInfo
+                if normalized_value != original_value:
+                    logger.info(f"后备标准化: {slot_name} '{original_value}' -> '{normalized_value}'")
+                    slot_info.normalized_value = normalized_value
+                    slot_info.value = normalized_value
+            
+            return slot_info
+            
+        except Exception as e:
+            logger.error(f"后备标准化失败: {slot_info.name}, 错误: {str(e)}")
+            return slot_info
+    
+    def _normalize_passenger_count(self, value: str) -> str:
+        """标准化乘客数量"""
+        try:
+            if isinstance(value, (int, float)):
+                return str(int(value))
+            
+            value_str = str(value).strip()
+            
+            # 移除常见后缀
+            for suffix in ['个人', '人', '位', '名', '个']:
+                if value_str.endswith(suffix):
+                    value_str = value_str[:-len(suffix)]
+                    break
+            
+            # 中文数字转换
+            chinese_numbers = {
+                '一': 1, '二': 2, '三': 3, '四': 4, '五': 5,
+                '六': 6, '七': 7, '八': 8, '九': 9, '十': 10
+            }
+            
+            if value_str in chinese_numbers:
+                return str(chinese_numbers[value_str])
+            
+            # 尝试直接转换为数字
+            try:
+                return str(int(float(value_str)))
+            except (ValueError, TypeError):
+                return '1'  # 默认返回1
+                
+        except Exception:
+            return '1'  # 默认返回1
+    
+    def _normalize_number(self, value: str) -> str:
+        """标准化通用数字"""
+        try:
+            import re
+            # 提取数字
+            numbers = re.findall(r'\d+', str(value))
+            if numbers:
+                return numbers[0]
+            return str(value)
+        except:
+            return str(value)
+    
+    def _normalize_date(self, value: str) -> str:
+        """标准化日期"""
+        try:
+            from datetime import datetime, timedelta
+            
+            value_str = str(value).strip()
+            today = datetime.now()
+            
+            # 处理相对日期
+            if value_str in ['今天', '今日']:
+                return today.strftime('%Y-%m-%d')
+            elif value_str in ['明天', '明日']:
+                return (today + timedelta(days=1)).strftime('%Y-%m-%d')
+            elif value_str in ['后天']:
+                return (today + timedelta(days=2)).strftime('%Y-%m-%d')
+            elif value_str in ['昨天', '昨日']:
+                return (today - timedelta(days=1)).strftime('%Y-%m-%d')
+            elif value_str in ['前天']:
+                return (today - timedelta(days=2)).strftime('%Y-%m-%d')
+            
+            return value_str
+        except:
+            return str(value)
 
 
 # 服务实例获取函数

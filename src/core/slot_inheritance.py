@@ -73,7 +73,8 @@ class SlotInheritanceEngine:
             'normalize_date': self._normalize_date_value,
             'extract_city': self._extract_city_name,
             'format_phone': self._format_phone_number,
-            'normalize_name': self._normalize_person_name
+            'normalize_name': self._normalize_person_name,
+            'normalize_passenger_count': self._normalize_passenger_count
         })
     
     def add_rule(self, rule: InheritanceRule):
@@ -340,6 +341,35 @@ class SlotInheritanceEngine:
     def _normalize_person_name(self, value: Any) -> str:
         """标准化人名"""
         return str(value).strip().title()
+    
+    def _normalize_passenger_count(self, value: Any) -> int:
+        """标准化乘客数量"""
+        if isinstance(value, (int, float)):
+            return int(value)
+        
+        value_str = str(value).strip()
+        
+        # 移除常见后缀
+        for suffix in ['个人', '人', '位', '名', '个']:
+            if value_str.endswith(suffix):
+                value_str = value_str[:-len(suffix)]
+                break
+        
+        # 中文数字转换
+        chinese_numbers = {
+            '一': 1, '二': 2, '三': 3, '四': 4, '五': 5,
+            '六': 6, '七': 7, '八': 8, '九': 9, '十': 10
+        }
+        
+        if value_str in chinese_numbers:
+            return chinese_numbers[value_str]
+        
+        # 尝试直接转换为数字
+        try:
+            return int(float(value_str))
+        except (ValueError, TypeError):
+            # 默认返回1
+            return 1
 
 
 class ConversationInheritanceManager:

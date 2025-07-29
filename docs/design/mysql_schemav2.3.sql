@@ -432,7 +432,7 @@ CREATE TABLE IF NOT EXISTS slot_dependencies (
     id INT PRIMARY KEY AUTO_INCREMENT,
     parent_slot_id INT NOT NULL,
     child_slot_id INT NOT NULL,
-    dependency_type VARCHAR(50) DEFAULT 'required_if',
+    dependency_type VARCHAR(50) DEFAULT 'depends_on',
     conditions JSON,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间'
@@ -509,11 +509,26 @@ NULL, '请问您希望什么时候出发？', '请提供有效的出发日期', 
 ((SELECT id FROM intents WHERE intent_name = 'book_flight'), 'passenger_count', '乘客数量', 'number', FALSE, FALSE,
 '{"min_value": 1, "max_value": 9, "examples": ["1", "2", "3", "一个人", "两个人"]}',
 '1', '请问您需要预订几位乘客的机票？', '乘客数量必须在1-9之间', 4, TRUE, NOW(), NOW()),
+((SELECT id FROM intents WHERE intent_name = 'book_flight'), 'return_date', '返程日期', 'date', FALSE, FALSE,
+'{"format": "YYYY-MM-DD", "allow_relative": true, "examples": ["三天后", "下周五", "2024-12-20"]}',
+NULL, '请问您希望什么时候返程？', '请提供有效的返程日期', 5, TRUE, NOW(), NOW()),
+((SELECT id FROM intents WHERE intent_name = 'book_flight'), 'trip_type', '行程类型', 'text', FALSE, FALSE,
+'{"values": ["single", "round_trip"], "default": "single", "examples": ["单程", "往返", "往返机票"]}',
+'single', '请问您需要预订单程还是往返机票？', '请选择单程或往返', 6, TRUE, NOW(), NOW()),
 
 -- 查询余额相关槽位
 ((SELECT id FROM intents WHERE intent_name = 'check_balance'), 'account_type', '账户类型', 'text', FALSE, FALSE,
 '{"allowed_values": ["银行卡", "储蓄卡", "信用卡", "支付宝", "微信"], "examples": ["银行卡", "储蓄卡", "信用卡"]}',
 '银行卡', '请问您要查询哪种账户的余额？', '请选择有效的账户类型', 1, TRUE, NOW(), NOW());
+
+-- 插入槽位依赖关系
+INSERT INTO slot_dependencies (parent_slot_id, child_slot_id, dependency_type, conditions, created_at, updated_at) VALUES
+-- 往返机票：返程日期依赖于出发日期
+((SELECT s.id FROM slots s JOIN intents i ON s.intent_id = i.id WHERE i.intent_name = 'book_flight' AND s.slot_name = 'departure_date'),
+ (SELECT s.id FROM slots s JOIN intents i ON s.intent_id = i.id WHERE i.intent_name = 'book_flight' AND s.slot_name = 'return_date'),
+ 'depends_on',
+ '{"context": "round_trip", "calculation": "relative_date", "description": "返程日期依赖于出发日期"}',
+ NOW(), NOW());
 
 -- 插入系统配置
 INSERT INTO system_configs (config_category, config_key, config_value, value_type, description, is_encrypted, is_public, validation_rule, default_value, is_active, created_by, created_at, updated_at) VALUES

@@ -1,0 +1,72 @@
+ # ===== 第1轮：初始订票 =====
+  echo "=== 第1轮：开始订票 ==="
+  curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "user_id": "3-user-03",
+      "input": "我想订一张明天去上海的机票"
+    }'
+
+  # ===== 第2轮：填写错误出发城市 =====  
+  echo -e "\n\n=== 第2轮：填写错误的出发城市 ==="
+  curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "user_id": "3-user-03",
+      "session_id": "sess_acd5c5ecca13",
+      "input": "北京"
+    }'
+
+  # ===== 第3轮：单槽位纠错 =====
+  echo -e "\n\n=== 第3轮：纠错出发城市 ==="
+  curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "session_id": "sess_acd5c5ecca13",
+      "user_id": "3-user-03",
+      "input": "不对，我是从武汉出发的"
+    }'
+
+  # ===== 第4轮：多槽位同时纠错 =====
+  echo -e "\n\n=== 第4轮：多槽位纠错 ==="
+  curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "session_id": "sess_acd5c5ecca13",
+      "user_id": "3-user-03",
+      "input": "改一下，我要后天从深圳到广州，2个人"
+    }'
+
+  # ===== 第5轮：否定式纠错 =====
+  echo -e "\n\n=== 第5轮：否定式纠错 ==="
+  curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "session_id": ""sess_acd5c5ecca13",
+      "user_id": "3-user-03",
+      "input": "不是后天，是下周一"
+    }'
+
+  🎯 验证标准
+
+  | 轮次  | 期望行为    | 验证点                            |
+  |-----|---------|--------------------------------|
+  | 第1轮 | 正常订票开始  | ✅ 提取3个槽位，询问出发城市                |
+  | 第2轮 | 槽位填充    | ✅ departure_city: 北京，槽位完整，订票成功 |
+  | 第3轮 | 🔥纠错覆盖  | ✅ departure_city: 武汉（覆盖北京）     |
+  | 第4轮 | 🔥多槽位纠错 | ✅ 同时修改多个槽位值                    |
+  | 第5轮 | 🔥否定式纠错 | ✅ 识别否定词，精确修改目标槽位               |
+
+  🔍 关键验证点
+
+  第3轮期望结果：
+  {
+    "slots": {
+      "departure_city": {"value": "武汉"},  // 已纠错
+      "arrival_city": {"value": "上海"},    // 保持
+      "departure_date": {"value": "2025-07-29"}, // 保持  
+      "passenger_count": {"value": "1"}    // 保持
+    },
+    "status": "completed",
+    "response": "✅ 机票预订成功！...武汉 → 上海..."
+  }

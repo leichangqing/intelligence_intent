@@ -226,6 +226,7 @@ class SlotValue(CommonModel):
             existing.extraction_method = extraction_method or existing.extraction_method
             existing.validation_status = 'pending'  # 重新验证
             existing.validation_error = None
+            existing.normalized_value = None  # 清空标准化值，强制重新标准化
             existing.save()
             return existing
         else:
@@ -259,7 +260,7 @@ class SlotValue(CommonModel):
     
     def normalize_value(self) -> None:
         """标准化槽位值"""
-        if self.extracted_value and not self.normalized_value:
+        if self.extracted_value:
             # 基本的值标准化逻辑
             normalized = str(self.extracted_value).strip()
             
@@ -269,11 +270,22 @@ class SlotValue(CommonModel):
                     # 日期标准化逻辑
                     normalized = self._normalize_date(normalized)
                 elif self.slot.slot_type == 'number':
-                    # 数字标准化逻辑
-                    try:
-                        float(normalized)  # 验证是数字
-                    except ValueError:
-                        pass
+                    # 数字标准化逻辑，特别处理乘客人数
+                    if self.slot.slot_name == 'passenger_count':
+                        normalized = self._normalize_passenger_count(normalized)
+                    else:
+                        # 通用数字标准化
+                        try:
+                            # 移除非数字字符，提取数字
+                            import re
+                            numbers = re.findall(r'\d+', normalized)
+                            if numbers:
+                                normalized = numbers[0]
+                            else:
+                                # 如果没有找到数字，尝试转换为浮点数验证
+                                float(normalized)
+                        except ValueError:
+                            pass
             
             self.normalized_value = normalized
     
@@ -327,6 +339,41 @@ class SlotValue(CommonModel):
         
         # 如果无法解析，返回原始文本
         return date_text
+    
+    def _normalize_passenger_count(self, value: str) -> str:
+        """标准化乘客数量"""
+        try:
+            # 使用 slot_inheritance.py 中相同的逻辑
+            if isinstance(value, (int, float)):
+                return str(int(value))
+            
+            value_str = str(value).strip()
+            
+            # 移除常见后缀
+            for suffix in ['个人', '人', '位', '名', '个']:
+                if value_str.endswith(suffix):
+                    value_str = value_str[:-len(suffix)]
+                    break
+            
+            # 中文数字转换
+            chinese_numbers = {
+                '一': 1, '二': 2, '三': 3, '四': 4, '五': 5,
+                '六': 6, '七': 7, '八': 8, '九': 9, '十': 10
+            }
+            
+            if value_str in chinese_numbers:
+                return str(chinese_numbers[value_str])
+            
+            # 尝试直接转换为数字
+            try:
+                return str(int(float(value_str)))
+            except (ValueError, TypeError):
+                # 默认返回1
+                return '1'
+                
+        except Exception:
+            # 默认返回1
+            return '1'
     
     def get_normalized_value(self) -> str:
         """获取标准化后的值"""

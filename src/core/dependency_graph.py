@@ -20,6 +20,7 @@ class DependencyType(Enum):
     """扩展的依赖类型"""
     REQUIRED = "required"
     CONDITIONAL = "conditional"
+    DEPENDS_ON = "depends_on"         # 基础依赖关系
     MUTEX = "mutex"
     HIERARCHICAL = "hierarchical"      # 层次依赖 A->B->C
     GROUP_ANY = "group_any"           # 组依赖：任一满足
@@ -96,18 +97,31 @@ class DependencyGraph:
     
     def add_edge(self, dependency: SlotDependency):
         """添加依赖边"""
-        from_slot = dependency.required_slot.slot_name
-        to_slot = dependency.dependent_slot.slot_name
+        # 通过ID获取槽位对象
+        from src.models.slot import Slot
+        try:
+            parent_slot = Slot.get_by_id(dependency.parent_slot_id)
+            child_slot = Slot.get_by_id(dependency.child_slot_id)
+            from_slot = parent_slot.slot_name
+            to_slot = child_slot.slot_name
+        except Exception as e:
+            logger.error(f"获取槽位信息失败: {str(e)}")
+            return
         
-        # 转换依赖类型
-        dep_type = DependencyType(dependency.dependency_type)
+        # 转换依赖类型，处理未知类型
+        try:
+            dep_type = DependencyType(dependency.dependency_type)
+        except ValueError:
+            # 如果dependency_type不在枚举中，使用CONDITIONAL作为默认值
+            logger.warning(f"未知的依赖类型: {dependency.dependency_type}, 使用默认值 CONDITIONAL")
+            dep_type = DependencyType.CONDITIONAL
         
         edge = DependencyEdge(
             from_slot=from_slot,
             to_slot=to_slot,
             dependency_type=dep_type,
             condition=dependency.get_condition(),
-            priority=dependency.priority
+            priority=1  # 默认优先级
         )
         
         self.edges.append(edge)

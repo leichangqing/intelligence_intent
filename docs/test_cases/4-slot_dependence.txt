@@ -1,0 +1,114 @@
+
+echo "=== 复杂槽位依赖测试 - 往返机票订购 ==="
+
+  # 第1轮：用户表达往返机票意图
+  echo -e "\n=== 第1轮：表达往返机票意图 ==="
+  curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "user_id": "4-user-06",
+      "input": "我要订往返机票"
+    }'
+
+
+  # 第2轮：提供出发和目的地城市
+  echo -e "\n=== 第2轮：提供城市信息 ==="
+  curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "session_id": "sess_6640caaa59f0",
+      "user_id": "4-user-06",
+      "input": "北京到上海"
+    }'
+
+
+  # 第3轮：提供出发日期
+  echo -e "\n=== 第3轮：提供出发日期 ==="
+  curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "session_id": "sess_6640caaa59f0",
+      "user_id": "4-user-06",
+      "input": "下周一"
+    }'
+
+
+
+  # 第4轮：提供返程日期（应该依赖于出发日期）
+  echo -e "\n=== 第4轮：提供返程日期 ==="
+  curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "session_id": "sess_6640caaa59f0",
+      "user_id": "4-user-06",
+      "input": "三天后回来"
+    }'
+
+
+
+  # 第5轮：完整信息确认
+  echo -e "\n=== 第5轮：信息完整性检查 ==="
+  curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "session_id": "sess_6640caaa59f0",
+      "user_id": "4-user-06",
+      "input": "确认订票"
+    }'
+
+  单独测试报文
+
+  第1轮：表达往返机票意图
+
+  curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "session_id": "sess_6640caaa59f0",
+      "user_id": "4-user-06",
+      "input": "我要订往返机票"
+    }'
+
+  第2轮：提供城市信息
+
+  curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+    -H "Content-Type: application/json" \
+    -d '{
+       "session_id": "sess_6640caaa59f0",
+      "user_id": "4-user-06",
+      "input": "北京到上海"
+    }'
+
+  第3轮：提供出发日期
+
+  curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "session_id": "sess_6640caaa59f0",
+      "user_id": "4-user-06",
+      "input": "下周一"
+    }'
+
+  第4轮：提供返程日期（测试依赖关系）
+
+  curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "session_id": "sess_6640caaa59f0",
+      "user_id": "4-user-06",
+      "input": "三天后回来"
+    }'
+
+  预期行为
+
+  1. 第1轮：系统识别往返机票意图，检测到需要额外的返程相关槽位
+  2. 第2轮：系统提取出发地和目的地，继续询问缺失槽位
+  3. 第3轮：系统提取出发日期，为返程日期建立依赖基准
+  4. 第4轮：系统应该能够基于出发日期计算返程日期（出发日期+3天）
+  5. 第5轮：确认所有槽位完整且依赖关系正确
+
+  关键验证点
+
+  - 返程日期应该基于出发日期进行计算
+  - 槽位间依赖关系的正确处理
+  - 相对时间表达（"三天后"）的准确解析
+  - 往返机票场景下的槽位完整性检查

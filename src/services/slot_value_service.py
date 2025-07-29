@@ -432,15 +432,20 @@ class SlotValueService:
                 slot_value.set_invalid("槽位值为空")
                 return {'is_valid': False, 'error': '槽位值为空'}
             
+            # 先进行标准化处理
+            slot_value.normalize_value()
+            
             # 获取槽位的验证规则
             validation_rules = slot.get_validation_rules()
             if additional_rules:
                 validation_rules.update(additional_rules)
             
-            # 基础类型验证
+            # 基础类型验证 - 使用标准化后的值
             if slot.slot_type == 'number':
                 try:
-                    normalized_value = float(extracted_value)
+                    # 使用标准化后的值进行验证
+                    value_to_validate = slot_value.normalized_value or extracted_value
+                    normalized_value = float(value_to_validate)
                     
                     # 数值范围验证
                     if 'min' in validation_rules and normalized_value < validation_rules['min']:
