@@ -1,0 +1,35 @@
+触发意图歧义
+
+  请求报文 1:
+  curl -X POST http://localhost:8000/api/v1/chat/interact \
+    -H "Content-Type: application/json" \
+    -d '{
+      "user_id": "6-user-08",
+      "input": "我想订票"
+    }'
+
+  curl -X POST http://localhost:8000/api/v1/chat/interact \
+    -H "Content-Type: application/json" \
+    -d '{
+      "user_id": "6-user-08",
+      "session_id": "sess_c7a938059431",
+      "input": "我想订机票"
+    }'
+    
+  请求报文 2:
+  curl -X POST http://localhost:8000/api/v1/chat/interact \
+    -H "Content-Type: application/json" \
+    -d '{
+      "user_id": "6-user-08",
+      "session_id": "sess_c7a938059431",
+      "input": "去上海的"
+    }'
+
+  请求报文 3:
+  curl -X POST http://localhost:8000/api/v1/chat/interact \
+    -H "Content-Type: application/json" \
+    -d '{
+      "user_id": "6-user-08",
+      "session_id": "sess_c7a938059431",
+      "input": "从北京出发，明天走"
+    }'

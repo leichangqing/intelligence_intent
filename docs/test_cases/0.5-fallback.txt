@@ -1,0 +1,101 @@
+# Fallback处理测试
+
+echo "=== Fallback处理测试 ==="
+
+# 测试1：天气闲聊
+echo -e "\n=== 测试1：天气闲聊 ==="
+curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "fallback_user_001",
+    "input": "今天天气真好"
+  }'
+
+# 测试2：问候语
+echo -e "\n=== 测试2：问候语 ==="
+curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "fallback_user_002",
+    "input": "你好吗"
+  }'
+
+# 测试3：随机文本
+echo -e "\n=== 测试3：随机文本 ==="
+curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "fallback_user_003",
+    "input": "随机文本abc123"
+  }'
+
+# 测试4：纯数字
+echo -e "\n=== 测试4：纯数字 ==="
+curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "fallback_user_004",
+    "input": "12345678"
+  }'
+
+# 测试5：特殊字符
+echo -e "\n=== 测试5：特殊字符 ==="
+curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "fallback_user_005",
+    "input": "!@#$%^&*()"
+  }'
+
+# 测试6：空输入
+echo -e "\n=== 测试6：空输入 ==="
+curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "fallback_user_006",
+    "input": ""
+  }'
+
+# 测试7：只有空格
+echo -e "\n=== 测试7：只有空格 ==="
+curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "fallback_user_007",
+    "input": "   "
+  }'
+
+# 测试8：无关话题
+echo -e "\n=== 测试8：无关话题 ==="
+curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "fallback_user_008",
+    "input": "我喜欢看电影"
+  }'
+
+# 测试9：技术术语
+echo -e "\n=== 测试9：技术术语 ==="
+curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "fallback_user_009",
+    "input": "HTTP协议和TCP协议"
+  }'
+
+# 测试10：混合语言
+echo -e "\n=== 测试10：混合语言 ==="
+curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "fallback_user_010",
+    "input": "Hello 你好 こんにちは"
+  }'
+
+# 预期结果：
+# - 系统无法识别出明确意图
+# - 置信度应该很低（<0.3）
+# - 应该触发fallback机制
+# - 可能转向RagFlow或其他后备方案
+# - 提供友好的无法理解提示
+# - 引导用户重新表达需求

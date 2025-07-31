@@ -9,7 +9,7 @@ import uuid
 import json
 
 from src.schemas.chat import (
-    ChatRequest, ChatResponse, SessionMetadata,
+    ChatRequest, ChatResponse, SessionMetadata, IntentCandidate,
     DisambiguationRequest, DisambiguationResponse
 )
 from src.schemas.common import StandardResponse
@@ -99,19 +99,81 @@ async def chat_interact(
         session_context['current_slots'] = current_slot_values
         session_id = session_context['session_id']
         
-        # 5. 多轮对话的意图识别（基于历史上下文）
-        intent_result = await intent_service.recognize_intent_with_history(
-            sanitized_input, request.user_id, session_context, conversation_history
+        # 5. 优先处理上下文相关的输入
+        
+        # 5.1 检查是否存在待处理的歧义，如果有则尝试解决
+        disambiguation_result = await conversation_service.try_resolve_disambiguation_with_input(
+            session_id, sanitized_input
         )
         
-        # 6. 处理不同的意图识别结果
+        if disambiguation_result:
+            # 歧义已解决，使用解决的意图继续处理
+            logger.info(f"歧义已通过用户输入解决: {disambiguation_result['intent_name']}")
+            
+            # 获取解决的意图对象
+            resolved_intent = await intent_service._get_intent_by_name(disambiguation_result['intent_name'])
+            if resolved_intent:
+                from src.schemas.intent_recognition import IntentRecognitionResult
+                intent_result = IntentRecognitionResult(
+                    intent=resolved_intent,
+                    confidence=disambiguation_result['confidence'],
+                    is_ambiguous=False,
+                    alternatives=[]
+                )
+            else:
+                # 如果找不到意图对象，回退到正常识别
+                intent_result = await intent_service.recognize_intent_with_history(
+                    sanitized_input, request.user_id, session_context, conversation_history
+                )
+        else:
+            # 5.2 检查是否是对缺失槽位的补充（优先级高于新意图识别）
+            slot_supplement_result = await _try_handle_slot_supplement(
+                sanitized_input, session_context, conversation_service, intent_service, session_id
+            )
+            
+            if slot_supplement_result:
+                # 槽位补充成功，直接返回结果，跳过后续的意图识别
+                response = slot_supplement_result
+                
+                # 记录对话历史
+                processing_time = int((time.time() - start_time) * 1000)
+                
+                # 构建槽位补充的intent_result
+                from src.schemas.intent_recognition import IntentRecognitionResult
+                supplement_intent = await intent_service._get_intent_by_name(slot_supplement_result.intent)
+                if supplement_intent:
+                    final_intent_result = IntentRecognitionResult(
+                        intent=supplement_intent,
+                        confidence=slot_supplement_result.confidence,
+                        is_ambiguous=False,
+                        alternatives=[]
+                    )
+                else:
+                    final_intent_result = None
+                
+                background_tasks.add_task(
+                    _save_conversation_record,
+                    request.user_id, session_id, sanitized_input,
+                    final_intent_result, response, processing_time, request_id, current_turn
+                )
+                
+                # 构建标准响应
+                transformer = get_response_transformer()
+                return transformer.chat_to_standard(response, request_id)
+            
+            # 5.3 没有待处理的歧义也没有槽位补充，进行正常的意图识别
+            intent_result = await intent_service.recognize_intent_with_history(
+                sanitized_input, request.user_id, session_context, conversation_history
+            )
+        
+        # 6. 处理意图识别结果（槽位补充已在前面处理）
         if intent_result.is_ambiguous:
             # 处理意图歧义
             response = await _handle_intent_ambiguity(
                 intent_result, sanitized_input, session_context, conversation_service
             )
         elif intent_result.intent is None:
-            # 首先检查是否是确认响应
+            # 检查是否是确认响应
             confirmation_result = await _try_handle_confirmation_response(
                 sanitized_input, session_context, conversation_service, intent_service
             )
@@ -119,20 +181,12 @@ async def chat_interact(
             if confirmation_result:
                 response = confirmation_result
             else:
-                # 检查是否是对缺失槽位的补充（会话连续性关键修复）
-                slot_supplement_result = await _try_handle_slot_supplement(
-                    sanitized_input, session_context, conversation_service, intent_service, session_id
+                # 非意图输入，调用RAGFLOW
+                response = await _handle_non_intent_input(
+                    sanitized_input, session_context, conversation_service
                 )
-                
-                if slot_supplement_result:
-                    response = slot_supplement_result
-                else:
-                    # 非意图输入，调用RAGFLOW
-                    response = await _handle_non_intent_input(
-                        sanitized_input, session_context, conversation_service
-                    )
         else:
-            # 明确的意图识别，但首先检查是否是确认响应
+            # 明确的意图识别，检查是否是确认响应
             confirmation_result = await _try_handle_confirmation_response(
                 sanitized_input, session_context, conversation_service, intent_service
             )
@@ -149,28 +203,13 @@ async def chat_interact(
         # 7. 记录对话历史（包含轮次信息）
         processing_time = int((time.time() - start_time) * 1000)
         
-        # 如果是槽位补充且有响应意图，更新intent_result
-        final_intent_result = intent_result
-        if (intent_result.intent is None and response.intent and 
-            hasattr(response, 'intent') and response.intent):
-            # 构建槽位补充的intent_result
-            from src.schemas.intent_recognition import IntentRecognitionResult
-            intent_obj = await intent_service._get_intent_by_name(response.intent)
-            if intent_obj:
-                final_intent_result = IntentRecognitionResult(
-                    intent=intent_obj,
-                    confidence=response.confidence,
-                    is_ambiguous=False,
-                    alternatives=[]
-                )
-        
         background_tasks.add_task(
             _save_conversation_record,
             request.user_id, session_id, sanitized_input,
-            final_intent_result, response, processing_time, request_id, current_turn
+            intent_result, response, processing_time, request_id, current_turn
         )
         
-        # 6. 构建标准响应 - 使用统一转换器
+        # 8. 构建标准响应 - 使用统一转换器
         transformer = get_response_transformer()
         return transformer.chat_to_standard(response, request_id)
         
@@ -258,7 +297,14 @@ async def _handle_intent_ambiguity(intent_result, user_input: str,
         status="ambiguous",
         response_type="disambiguation",
         next_action="user_choice",
-        ambiguous_intents=intent_result.alternatives,
+        ambiguous_intents=[
+            IntentCandidate(
+                intent_name=alt.intent_name,
+                display_name=alt.display_name or alt.intent_name,
+                confidence=alt.confidence,
+                description=alt.reasoning
+            ) for alt in intent_result.alternatives
+        ],
         session_metadata=SessionMetadata(
             total_turns=session_context.get('current_turn', 1),
             session_duration_seconds=0
@@ -355,7 +401,7 @@ async def _handle_clear_intent(intent_result, user_input: str, session_context: 
 async def _execute_function_call(intent, slots: Dict, session_context: Dict,
                                conversation_service: ConversationService) -> ChatResponse:
     """
-    执行功能调用
+    执行功能调用 - 使用配置驱动的意图处理器
     
     Args:
         intent: 意图对象
@@ -367,53 +413,21 @@ async def _execute_function_call(intent, slots: Dict, session_context: Dict,
         ChatResponse: 功能调用响应
     """
     try:
-        # 使用Mock服务处理已知意图
+        # 使用配置驱动的意图处理器
+        from src.services.config_driven_intent_processor import get_config_driven_processor
+        processor = await get_config_driven_processor()
+        
+        # 执行意图处理
+        return await processor.execute_intent(intent, slots, session_context)
+            
+    except Exception as e:
+        logger.error(f"配置驱动意图处理失败: {str(e)}")
+        
+        # 回退到Mock服务处理已知意图
         if intent.intent_name == 'book_flight':
             return await _mock_book_flight_service(intent, slots, session_context)
         elif intent.intent_name == 'check_balance':
             return await _mock_check_balance_service(intent, slots, session_context)
-        
-        # 获取功能调用服务
-        from src.api.dependencies import get_function_service
-        function_service = await get_function_service()
-        
-        # 执行功能调用
-        function_result = await function_service.execute_function_call(
-            intent, slots, session_context
-        )
-        
-        if function_result.success:
-            return ChatResponse(
-                response=function_result.response_message,
-                session_id=session_context['session_id'],
-                intent=intent.intent_name,
-                confidence=0.95,  # 功能执行成功时设置高置信度
-                slots=slots,
-                status="completed",
-                response_type="api_result",
-                next_action="none",
-                api_result=function_result.data,
-            )
-        else:
-            # API调用失败
-            error_response = f"很抱歉，{intent.display_name}服务暂时不可用"
-            if hasattr(function_result, 'error_message') and function_result.error_message:
-                error_response += f"：{function_result.error_message}"
-            error_response += "。请稍后重试或联系客服。"
-            
-            return ChatResponse(
-                response=error_response,
-                session_id=session_context['session_id'],
-                intent=intent.intent_name,
-                confidence=0.95,
-                slots=slots,
-                status="api_error",
-                response_type="error_with_alternatives",
-                next_action="retry",
-            )
-            
-    except Exception as e:
-        logger.error(f"功能调用执行失败: {str(e)}")
         
         return ChatResponse(
             response="系统繁忙，请稍后重试。",
@@ -728,9 +742,14 @@ async def _save_conversation_record(user_id: str, session_id: str, user_input: s
         request_id: 请求ID
     """
     try:
+        logger.info(f"保存对话记录: user_input='{user_input}', intent='{response.intent}', status='{response.status}', response_type='{response.response_type}'")
         # V2.2重构: 更新对话记录创建以适配新的字段结构
         from src.models.conversation import Session
         session = Session.get(Session.session_id == session_id)
+        
+        # 确定正确的意图名称 - 优先使用response中的意图信息
+        recognized_intent = response.intent or (intent_result.intent.intent_name if intent_result and intent_result.intent else None)
+        confidence_score = response.confidence if hasattr(response, 'confidence') else (intent_result.confidence if intent_result else 0.0)
         
         # 检查是否已存在相同的记录，避免重复键错误
         try:
@@ -740,8 +759,8 @@ async def _save_conversation_record(user_id: str, session_id: str, user_input: s
             )
             # 更新现有记录
             conversation.user_input = user_input
-            conversation.intent_recognized = intent_result.intent.intent_name if intent_result.intent else None
-            conversation.confidence_score = intent_result.confidence
+            conversation.intent_recognized = recognized_intent
+            conversation.confidence_score = confidence_score
             conversation.system_response = response.response
             conversation.response_type = response.response_type
             conversation.status = response.status
@@ -753,8 +772,8 @@ async def _save_conversation_record(user_id: str, session_id: str, user_input: s
                 session_id=session.session_id,  # 修复：传递session_id而不是session对象
                 user_id=session.user_id,
                 user_input=user_input,
-                intent_recognized=intent_result.intent.intent_name if intent_result.intent else None,
-                confidence_score=intent_result.confidence,
+                intent_recognized=recognized_intent,
+                confidence_score=confidence_score,
                 system_response=response.response,
                 response_type=response.response_type,
                 status=response.status,
@@ -769,7 +788,7 @@ async def _save_conversation_record(user_id: str, session_id: str, user_input: s
             try:
                 await slot_value_service.save_conversation_slots(
                     session_id, conversation.id,
-                    intent_result.intent.intent_name if intent_result.intent else None,
+                    recognized_intent,  # 使用已确定的正确意图名称
                     response.slots
                 )
             except Exception as e:
@@ -940,7 +959,7 @@ async def _try_handle_slot_supplement(
         # 从最近的对话开始向前查找，最多查找5轮
         for i in range(min(5, len(conversation_history))):
             conv = conversation_history[i]  # 修复：conversation_history已经是按时间倒序的，直接使用索引i
-            logger.info(f"检查轮次{i+1}: status={conv.get('status')}, response_type={conv.get('response_type')}, intent={conv.get('intent')}")
+            logger.info(f"检查轮次{i+1}: status={conv.get('status')}, response_type={conv.get('response_type')}, intent={conv.get('intent')}, user_input='{conv.get('user_input', '')[:20]}'")
             
             # 查找最近的槽位收集状态对话
             if (conv.get('status') == 'incomplete' and 
@@ -1076,7 +1095,7 @@ async def _generate_confirmation_prompt(
     conversation_service: ConversationService
 ) -> ChatResponse:
     """
-    生成槽位确认提示
+    生成槽位确认提示 - 使用配置驱动的响应模板
     
     Args:
         intent: 意图对象
@@ -1088,86 +1107,29 @@ async def _generate_confirmation_prompt(
         ChatResponse: 确认提示响应
     """
     try:
-        # 提取槽位值 - 兼容SlotInfo对象和字典格式
-        def get_slot_value(slot_data, default='未知'):
-            if slot_data is None:
-                return default
-            if hasattr(slot_data, 'value'):  # SlotInfo对象
-                return slot_data.value or default
-            elif isinstance(slot_data, dict):  # 字典格式
-                return slot_data.get('value', default)
-            else:  # 直接值
-                return str(slot_data)
+        # 应用默认值到槽位字典中
+        complete_slots = await _apply_default_values_to_slots(intent, slots)
         
-        # 根据意图类型生成确认信息
-        if intent.intent_name == 'book_flight':
-            departure_city = get_slot_value(slots.get('departure_city'))
-            arrival_city = get_slot_value(slots.get('arrival_city'))
-            departure_date = get_slot_value(slots.get('departure_date'))
-            passenger_count = get_slot_value(slots.get('passenger_count'), '1')
-            return_date = get_slot_value(slots.get('return_date'))
-            trip_type = get_slot_value(slots.get('trip_type'))
-            
-            # 构建基础信息
-            confirmation_message = (
-                f"✈️ 请确认您的航班预订信息：\n\n"
-                f"🏙️ 出发城市：{departure_city}\n"
-                f"🏙️ 到达城市：{arrival_city}\n"
-                f"📅 出发日期：{departure_date}\n"
-            )
-            
-            # 如果是往返机票，添加返程信息
-            if trip_type and (trip_type == 'round_trip' or '往返' in str(trip_type)):
-                if return_date and return_date != '未知':
-                    confirmation_message += f"🔄 返程日期：{return_date}\n"
-                confirmation_message += f"✈️ 行程类型：往返\n"
-            else:
-                confirmation_message += f"✈️ 行程类型：单程\n"
-            
-            # 添加乘客信息和操作提示
-            confirmation_message += (
-                f"👥 乘客人数：{passenger_count}人\n\n"
-                f"以上信息是否正确？\n"
-                f"• 输入'确认'或'是'来预订机票\n"
-                f"• 输入'修改'来重新填写信息\n"
-                f"• 输入'取消'来取消预订"
-            )
-            
-        elif intent.intent_name == 'check_balance':
-            account_type = get_slot_value(slots.get('account_type'), '银行卡')
-            
-            confirmation_message = (
-                f"💳 请确认您的查询信息：\n\n"
-                f"🏦 账户类型：{account_type}\n\n"
-                f"以上信息是否正确？\n"
-                f"• 输入'确认'或'是'来查询余额\n"
-                f"• 输入'修改'来重新选择账户类型\n"
-                f"• 输入'取消'来取消查询"
-            )
-            
+        # 使用配置驱动的意图处理器生成确认提示
+        from src.services.config_driven_intent_processor import get_config_driven_processor
+        processor = await get_config_driven_processor()
+        
+        # 获取确认响应模板
+        template = await processor._get_response_template(intent.id, 'confirmation')
+        
+        # 如果有专用模板，使用配置驱动的方式渲染
+        if template and template != '请确认您的信息是否正确？':
+            confirmation_message = processor._render_response_template(template, {**complete_slots})
         else:
-            # 通用确认格式
-            slot_lines = []
-            for slot_name, slot_data in slots.items():
-                if slot_data:
-                    slot_value = get_slot_value(slot_data)
-                    slot_lines.append(f"• {slot_name}：{slot_value}")
-            
-            confirmation_message = (
-                f"📋 请确认您的信息：\n\n" +
-                "\n".join(slot_lines) +
-                "\n\n以上信息是否正确？\n"
-                f"• 输入'确认'或'是'来执行操作\n"
-                f"• 输入'修改'来重新填写信息\n"
-                f"• 输入'取消'来取消操作"
-            )
+            # 回退到硬编码逻辑
+            confirmation_message = await _generate_hardcoded_confirmation(intent, complete_slots)
         
         return ChatResponse(
             response=confirmation_message,
             session_id=session_context['session_id'],
             intent=intent.intent_name,
             confidence=0.95,
-            slots=slots,
+            slots=complete_slots,  # 使用包含默认值的完整槽位
             status="awaiting_confirmation",
             response_type="confirmation_prompt",
             next_action="user_confirmation",
@@ -1181,6 +1143,94 @@ async def _generate_confirmation_prompt(
         logger.error(f"生成确认提示失败: {str(e)}")
         # 回退到直接执行功能调用
         return await _execute_function_call(intent, slots, session_context, conversation_service)
+
+
+async def _generate_hardcoded_confirmation(intent, slots: Dict[str, Any]) -> str:
+    """
+    生成硬编码的确认信息（向后兼容）
+    
+    Args:
+        intent: 意图对象
+        slots: 完整的槽位值字典
+        
+    Returns:
+        str: 确认信息
+    """
+    # 提取槽位值 - 兼容SlotInfo对象和字典格式
+    def get_slot_value(slot_data, default='未知'):
+        if slot_data is None:
+            return default
+        if hasattr(slot_data, 'value'):  # SlotInfo对象
+            return slot_data.value or default
+        elif isinstance(slot_data, dict):  # 字典格式
+            return slot_data.get('value', default)
+        else:  # 直接值
+            return str(slot_data)
+    
+    # 根据意图类型生成确认信息
+    if intent.intent_name == 'book_flight':
+        departure_city = get_slot_value(slots.get('departure_city'))
+        arrival_city = get_slot_value(slots.get('arrival_city'))
+        departure_date = get_slot_value(slots.get('departure_date'))
+        passenger_count = get_slot_value(slots.get('passenger_count'), '1')
+        return_date = get_slot_value(slots.get('return_date'))
+        trip_type = get_slot_value(slots.get('trip_type'))
+        
+        # 构建基础信息
+        confirmation_message = (
+            f"✈️ 请确认您的航班预订信息：\n\n"
+            f"🏙️ 出发城市：{departure_city}\n"
+            f"🏙️ 到达城市：{arrival_city}\n"
+            f"📅 出发日期：{departure_date}\n"
+        )
+        
+        # 如果是往返机票，添加返程信息
+        if trip_type and (trip_type == 'round_trip' or '往返' in str(trip_type)):
+            if return_date and return_date != '未知':
+                confirmation_message += f"🔄 返程日期：{return_date}\n"
+            confirmation_message += f"✈️ 行程类型：往返\n"
+        else:
+            confirmation_message += f"✈️ 行程类型：单程\n"
+        
+        # 添加乘客信息和操作提示
+        confirmation_message += (
+            f"👥 乘客人数：{passenger_count}人\n\n"
+            f"以上信息是否正确？\n"
+            f"• 输入'确认'或'是'来预订机票\n"
+            f"• 输入'修改'来重新填写信息\n"
+            f"• 输入'取消'来取消预订"
+        )
+        
+    elif intent.intent_name == 'check_balance':
+        account_type = get_slot_value(slots.get('account_type'), '银行卡')
+        
+        confirmation_message = (
+            f"💳 请确认您的查询信息：\n\n"
+            f"🏦 账户类型：{account_type}\n\n"
+            f"以上信息是否正确？\n"
+            f"• 输入'确认'或'是'来查询余额\n"
+            f"• 输入'修改'来重新选择账户类型\n"
+            f"• 输入'取消'来取消查询"
+        )
+        
+    else:
+        # 通用确认格式
+        slot_lines = []
+        for slot_name, slot_data in slots.items():
+            if slot_data:
+                slot_value = get_slot_value(slot_data)
+                slot_lines.append(f"• {slot_name}：{slot_value}")
+        
+        confirmation_message = (
+            f"📋 请确认您的信息：\n\n" +
+            "\n".join(slot_lines) +
+            "\n\n以上信息是否正确？\n"
+            f"• 输入'确认'或'是'来执行操作\n"
+            f"• 输入'修改'来重新填写信息\n"
+            f"• 输入'取消'来取消操作"
+        )
+    
+    return confirmation_message
 
 
 async def _save_error_conversation(user_id: str, user_input: str, 
@@ -1220,3 +1270,54 @@ async def _save_error_conversation(user_id: str, user_input: str,
         
     except Exception as e:
         logger.error(f"保存错误对话记录失败: {str(e)}")
+
+
+async def _apply_default_values_to_slots(intent, slots: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    为槽位字典应用默认值
+    
+    Args:
+        intent: 意图对象
+        slots: 当前槽位字典
+        
+    Returns:
+        Dict[str, Any]: 包含默认值的完整槽位字典
+    """
+    try:
+        # 直接从数据库获取意图的所有槽位定义
+        from src.models.slot import Slot
+        slot_definitions = list(Slot.select().where(Slot.intent == intent.id))
+        
+        # 创建完整的槽位字典副本
+        complete_slots = dict(slots)
+        
+        # 为每个有默认值的槽位应用默认值（如果当前不存在）
+        for slot_def in slot_definitions:
+            slot_name = slot_def.slot_name
+            default_value = slot_def.default_value
+            
+            # 如果槽位不存在且有默认值，应用默认值
+            if slot_name not in complete_slots and default_value is not None and default_value.strip():
+                logger.info(f"为槽位 {slot_name} 应用默认值: {default_value}")
+                
+                # 创建槽位信息对象，与现有格式保持一致
+                complete_slots[slot_name] = {
+                    'name': slot_name,
+                    'original_text': default_value,
+                    'extracted_value': default_value,
+                    'normalized_value': default_value,
+                    'confidence': 1.0,
+                    'extraction_method': 'default',
+                    'validation': None,
+                    'is_confirmed': True,
+                    'value': default_value,
+                    'source': 'default',
+                    'is_validated': True,
+                    'validation_error': None
+                }
+        
+        return complete_slots
+        
+    except Exception as e:
+        logger.error(f"应用默认值失败: {str(e)}")
+        return slots  # 出错时返回原始槽位字典

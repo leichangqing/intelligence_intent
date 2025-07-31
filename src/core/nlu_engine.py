@@ -103,6 +103,7 @@ class NLUEngine:
         self._intent_cache: Dict[str, Intent] = {}
         self._session: Optional[aiohttp.ClientSession] = None
         self.confidence_manager = ConfidenceManager(settings)
+        self._keywords_cache: Optional[Dict[str, List[str]]] = None
     
     async def initialize(self):
         """初始化NLU引擎"""
@@ -129,6 +130,9 @@ class NLUEngine:
             
             # 加载意图缓存
             await self._load_intent_cache()
+            
+            # 预加载关键词缓存
+            self._keywords_cache = await self._load_intent_keywords_from_db()
             
             self._initialized = True
             logger.info("NLU引擎初始化完成")
@@ -159,6 +163,69 @@ class NLUEngine:
             
         except Exception as e:
             logger.error(f"加载意图缓存失败: {str(e)}")
+    
+    async def _load_intent_keywords_from_db(self) -> Dict[str, List[str]]:
+        """从数据库加载意图关键词映射"""
+        try:
+            # 使用同步查询（简化版本）
+            import mysql.connector
+            from src.config.settings import settings
+            
+            core_nouns = {}
+            
+            # 使用mysql.connector同步连接
+            conn = mysql.connector.connect(
+                host=settings.DATABASE_HOST,
+                port=settings.DATABASE_PORT,
+                user=settings.DATABASE_USER,
+                password=settings.DATABASE_PASSWORD,
+                database=settings.DATABASE_NAME,
+                charset='utf8mb4'
+            )
+            
+            try:
+                cursor = conn.cursor()
+                query = """
+                SELECT keyword, intent_name, weight, keyword_type 
+                FROM intent_keywords 
+                WHERE is_active = TRUE 
+                ORDER BY weight DESC
+                """
+                cursor.execute(query)
+                rows = cursor.fetchall()
+                
+                for row in rows:
+                    keyword, intent_name, weight, keyword_type = row
+                    if keyword not in core_nouns:
+                        core_nouns[keyword] = []
+                    core_nouns[keyword].append(intent_name)
+                
+                logger.info(f"从数据库加载了{len(core_nouns)}个关键词映射")
+                cursor.close()
+                
+            finally:
+                conn.close()
+                
+            return core_nouns
+                
+        except Exception as e:
+            logger.error(f"从数据库加载关键词映射失败: {str(e)}")
+            # 降级到硬编码版本
+            return {
+                '机票': ['book_flight'],
+                '火车票': ['book_train'], 
+                '电影票': ['book_movie'],
+                '航班': ['book_flight'],
+                '飞机': ['book_flight'],
+                '票': ['book_generic', 'book_flight', 'book_train', 'book_movie'],
+                '余额': ['check_balance'],
+                '账户': ['check_balance'],
+                '银行卡': ['check_balance'],
+                '钱': ['check_balance'],
+                '查询': ['check_balance'],
+                '查': ['check_balance'],
+                '看': ['check_balance']
+            }
     
     async def _test_llm_connection(self):
         """测试LLM连接"""
@@ -228,12 +295,21 @@ class NLUEngine:
                     )
                     # 同时获取规则置信度作为参考
                     rule_result = await self._rule_based_intent_recognition(user_input, active_intents)
-                    if rule_result.intent == result.intent:
-                        rule_confidence = self.confidence_manager.calibrate_confidence(
-                            rule_result.confidence, ConfidenceSource.RULE
-                        )
+                    rule_confidence = self.confidence_manager.calibrate_confidence(
+                        rule_result.confidence, ConfidenceSource.RULE
+                    )
+                    
+                    # 如果规则匹配置信度足够高且与LLM结果不一致，优先使用规则结果
+                    if (rule_result.intent != result.intent and 
+                        rule_result.confidence > 0.8 and 
+                        rule_result.intent != 'unknown'):
+                        logger.info(f"规则匹配置信度高({rule_result.confidence:.3f})，覆盖LLM结果: {result.intent} -> {rule_result.intent}")
+                        result = rule_result
+                        # 重新校准置信度
+                        llm_confidence = None  # 不使用LLM置信度
             else:
                 # 模拟模式：使用简单规则匹配
+                logger.info(f"使用模拟模式进行规则匹配，输入: {user_input}")
                 rule_result = await self._rule_based_intent_recognition(user_input, active_intents)
                 result = rule_result
                 rule_confidence = self.confidence_manager.calibrate_confidence(
@@ -463,13 +539,15 @@ class NLUEngine:
             else:
                 intents_to_match = self._intent_cache
             
-            # 简单关键词匹配
+            # 改进的关键词匹配
             for intent_name, intent in intents_to_match.items():
                 score = 0.0
+                matched_keywords = []
                 
                 # 检查意图名称匹配
                 if intent_name.lower() in user_input_lower:
                     score += 0.8
+                    matched_keywords.append(f"intent_name:{intent_name}")
                 
                 # 检查描述关键词匹配
                 if intent.description:
@@ -477,14 +555,82 @@ class NLUEngine:
                     for word in desc_words:
                         if len(word) > 2 and word in user_input_lower:
                             score += 0.2
+                            matched_keywords.append(f"desc:{word}")
                 
-                # 检查示例匹配
+                # 改进的示例匹配 - 优先完全匹配，然后才是关键词匹配
                 examples = intent.get_examples()
                 for example_text in examples[:10]:  # 限制处理数量
-                    example_words = example_text.lower().split()
-                    for word in example_words:
-                        if len(word) > 2 and word in user_input_lower:
-                            score += 0.1
+                    example_lower = example_text.lower()
+                    
+                    # 完全匹配或高度相似匹配得更高分
+                    if user_input_lower == example_lower:
+                        score += 1.0  # 完全匹配得最高分
+                        matched_keywords.append(f"exact_match:{example_text}")
+                    elif user_input_lower in example_lower or example_lower in user_input_lower:
+                        # 包含关系匹配，但要区分方向
+                        if user_input_lower in example_lower:
+                            # 用户输入是示例的子串（较不准确）
+                            score += 0.3
+                            matched_keywords.append(f"partial_in_example:{example_text}")
+                        else:
+                            # 示例是用户输入的子串（较准确）
+                            score += 0.6
+                            matched_keywords.append(f"example_in_input:{example_text}")
+                    else:
+                        # 分词匹配，只有关键特征词才计分
+                        example_words = example_lower.split()
+                        user_words = user_input_lower.split()
+                        
+                        # 使用缓存的关键词权重策略
+                        keywords_mapping = self._keywords_cache or {}
+                        
+                        # 分离不同类型的关键词
+                        core_nouns = {}
+                        action_verbs = []
+                        
+                        for keyword, intents in keywords_mapping.items():
+                            core_nouns[keyword] = intents
+                            # 基于常见动词模式判断
+                            if keyword in ['订', '预订', '购买', '买', '查询', '查', '看']:
+                                if keyword not in action_verbs:
+                                    action_verbs.append(keyword)
+                        
+                        # 无意义词过滤
+                        common_words = ['我', '想', '要', '帮', '的', '了', '吗', '呢', '吧', '一张', '一个']
+                        
+                        # 首先检查用户输入中是否包含核心名词（支持复合词）
+                        user_input_has_core_noun = False
+                        for core_noun, target_intents in core_nouns.items():
+                            if core_noun in user_input_lower:
+                                if intent_name in target_intents:
+                                    score += 2.0  # 用户输入直接包含匹配的核心名词，给予最高分
+                                    matched_keywords.append(f"direct_core_match:{core_noun}")
+                                    user_input_has_core_noun = True
+                                else:
+                                    score -= 1.0  # 用户输入包含其他意图的核心名词，大幅扣分
+                                    matched_keywords.append(f"direct_core_mismatch:{core_noun}")
+                        
+                        # 然后检查示例词匹配
+                        for word in example_words:
+                            if len(word) > 1 and word in user_words and word not in common_words:
+                                # 检查是否为核心名词，且是否匹配正确的意图类型
+                                if word in core_nouns:
+                                    if intent_name in core_nouns[word]:
+                                        score += 0.8  # 示例中核心名词匹配正确意图
+                                        matched_keywords.append(f"example_core_match:{word}")
+                                    else:
+                                        score -= 0.3  # 示例中核心名词不匹配意图，轻微扣分
+                                        matched_keywords.append(f"example_core_mismatch:{word}")
+                                elif word in action_verbs:
+                                    score += 0.2  # 动词中等分
+                                    matched_keywords.append(f"action_verb:{word}")
+                                else:
+                                    score += 0.1  # 其他词低分
+                                    matched_keywords.append(f"normal_word:{word}")
+                
+                # 记录匹配信息用于调试
+                if score > 0:
+                    logger.info(f"规则匹配 - 意图 {intent_name} 得分: {score:.3f}, 匹配关键词: {matched_keywords}")
                 
                 if score > best_score:
                     best_score = score
@@ -499,9 +645,10 @@ class NLUEngine:
                     user_input=user_input
                 )
             
+            logger.info(f"规则匹配最终结果 - 最佳意图: {best_match}, 最佳得分: {best_score:.3f}")
             return IntentRecognitionResult.from_nlu_result(
                 intent_name=best_match, 
-                confidence=min(best_score, 0.95),  # 规则匹配最高置信度限制为0.95
+                confidence=min(best_score * 0.8, 0.85),  # 降低规则匹配置信度，避免过度自信
                 reasoning=f"基于关键词匹配，得分: {best_score:.3f}",
                 user_input=user_input
             )
@@ -1431,7 +1578,8 @@ class NLUEngine:
                         (slot_type.upper() == 'EMAIL' and entity_type == 'email') or
                         (slot_type.upper() == 'LOCATION' and entity_type == 'location') or
                         (slot_type.upper() == 'CITY' and entity_type == 'location') or
-                        (slot_type.upper() == 'TEXT' and entity_type in ['location', 'person', 'organization', 'misc'])):
+                        (slot_name == 'bank_name' and entity_type == 'BANK') or
+                        (slot_type.upper() == 'TEXT' and entity_type in ['location', 'person', 'organization', 'misc', 'BANK'])):
                         
                         # 使用entity的text作为value，如果entity没有value字段
                         final_value = entity_value if entity_value is not None else entity_text

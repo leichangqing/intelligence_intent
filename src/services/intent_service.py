@@ -257,6 +257,10 @@ class IntentService:
         try:
             base_confidence = result.confidence
             adjustment = 0.0
+            user_input = result.user_input or ""
+            
+            # 检查是否为不完整输入（可能是槽位补充）
+            is_incomplete_input = len(user_input.split()) <= 3 and base_confidence < 0.5
             
             # 意图连续性检查
             recent_intents = enhanced_context.get('historical_intents', [])
@@ -264,7 +268,54 @@ class IntentService:
                 if result.intent.intent_name in recent_intents:
                     adjustment += 0.1  # 同一意图连续出现，增加置信度
             
-            # 槽位延续性检查
+            # 增强的槽位延续性检查 - 特别处理不完整输入
+            if is_incomplete_input and conversation_history:
+                # 对于不完整输入，查找最近的意图上下文
+                last_intent = None
+                for turn in reversed(conversation_history[-3:]):  # 最近3轮
+                    if turn.get('intent_recognized'):
+                        last_intent = turn['intent_recognized']
+                        break
+                
+                if last_intent:
+                    # 检查输入是否像是在提供槽位信息
+                    potential_slots = self._detect_potential_slot_values(user_input, last_intent)
+                    if potential_slots:
+                        # 如果输入看起来像是在提供槽位值，倾向于继承之前的意图
+                        for alt in result.alternatives:
+                            if alt.intent_name == last_intent:
+                                # 将匹配历史意图的候选提升置信度
+                                alt.confidence = min(1.0, alt.confidence + 0.3)
+                                logger.debug(f"基于上下文提升意图 {last_intent} 置信度: {alt.confidence}")
+                                
+                        # 重新排序alternatives
+                        result.alternatives.sort(key=lambda x: x.confidence, reverse=True)
+                        
+                        # 更新主要意图为最高置信度的候选
+                        if result.alternatives and result.alternatives[0].confidence > base_confidence:
+                            # 直接更新主要意图
+                            best_alt = result.alternatives[0]
+                            try:
+                                from src.models.intent import Intent
+                                result.intent = Intent.get(Intent.intent_name == best_alt.intent_name)
+                                result.intent_name = best_alt.intent_name
+                                result.confidence = best_alt.confidence
+                                result.is_ambiguous = False  # 基于上下文解决了歧义
+                                
+                                logger.info(f"基于上下文延续，意图从 {result.intent_name or 'None'} 调整为 {best_alt.intent_name}")
+                                
+                                # 添加推理说明
+                                context_reason = f"基于历史意图 {last_intent} 和槽位信息 {list(potential_slots.keys())} 调整"
+                                if result.reasoning:
+                                    result.reasoning += f" | {context_reason}"
+                                else:
+                                    result.reasoning = context_reason
+                                    
+                            except Exception as e:
+                                logger.warning(f"更新意图对象失败: {e}")
+                                adjustment += 0.3  # 如果无法更新意图对象，至少提升置信度
+            
+            # 原有的槽位延续性检查
             current_slots = enhanced_context.get('current_slots', {})
             if current_slots and result.intent:
                 # 如果当前输入可能在延续之前的槽位填充
@@ -287,6 +338,39 @@ class IntentService:
         except Exception as e:
             logger.warning(f"调整置信度失败: {str(e)}")
             return result.confidence
+    
+    def _detect_potential_slot_values(self, user_input: str, intent_name: str) -> Dict[str, Any]:
+        """检测用户输入中可能的槽位值"""
+        potential_slots = {}
+        user_input_lower = user_input.lower()
+        
+        # 常见的城市名（简化版）
+        cities = ['北京', '上海', '广州', '深圳', '杭州', '南京', '武汉', '成都', '重庆', '西安']
+        for city in cities:
+            if city in user_input:
+                if intent_name in ['book_flight', 'book_train']:
+                    # 根据语言模式判断是出发地还是目的地
+                    if '去' in user_input or '到' in user_input:
+                        potential_slots['arrival_city'] = city
+                    elif '从' in user_input:
+                        potential_slots['departure_city'] = city
+                    else:
+                        # 默认认为是目的地
+                        potential_slots['arrival_city'] = city
+        
+        # 检测时间表达
+        time_patterns = ['明天', '后天', '下周', '今天', '周一', '周二', '周三', '周四', '周五', '周六', '周日']
+        for pattern in time_patterns:
+            if pattern in user_input:
+                potential_slots['departure_date'] = pattern
+        
+        # 检测数量
+        import re
+        numbers = re.findall(r'[一二三四五六七八九十\d]+(?=人|位|张|个)', user_input)
+        if numbers:
+            potential_slots['passenger_count'] = numbers[0]
+            
+        return potential_slots
     
     async def _get_active_intents(self) -> List[Intent]:
         """获取所有活跃的意图配置"""
@@ -371,8 +455,30 @@ class IntentService:
         
         logger.info(f"阈值决策: {threshold_decision.reason}")
         
-        # 根据决策结果返回
+        # 根据决策结果返回 - 修改：低置信度也尝试歧义检测
         if not threshold_decision.passed:
+            # 检查是否是潜在的歧义情况
+            # 如果用户输入包含通用词汇，尝试歧义检测
+            ambiguous_keywords = ['订票', '买票', '预订', '想要', '帮我', '我要']
+            contains_ambiguous_keyword = any(keyword in user_input for keyword in ambiguous_keywords)
+            
+            if contains_ambiguous_keyword:
+                # 尝试基于关键词的歧义检测
+                potential_candidates = await self._find_potential_candidates_by_keywords(user_input)
+                if len(potential_candidates) > 1:
+                    # 进行歧义检测
+                    is_ambiguous, ambiguous_candidates, ambiguity_analysis = await self.detect_ambiguity(
+                        potential_candidates, user_input, context
+                    )
+                    if is_ambiguous:
+                        logger.info(f"基于关键词检测到歧义: {len(ambiguous_candidates)}个候选")
+                        return IntentRecognitionResult.from_ambiguous_result(
+                            candidates=ambiguous_candidates,
+                            analysis=ambiguity_analysis,
+                            user_input=user_input,
+                            context=context
+                        )
+            
             # 更新意图统计（失败案例）
             if top_intent:
                 self.confidence_manager.update_intent_statistics(
@@ -1469,6 +1575,52 @@ class IntentService:
             logger.error(f"多意图选择解析失败: {str(e)}")
             return [], []
     
+    async def _find_potential_candidates_by_keywords(self, user_input: str) -> List[Dict]:
+        """
+        基于关键词找到潜在的候选意图
+        
+        Args:
+            user_input: 用户输入
+            
+        Returns:
+            List[Dict]: 潜在候选意图列表
+        """
+        candidates = []
+        
+        # 订票相关关键词映射
+        keyword_mappings = {
+            '订票': ['book_flight', 'book_train', 'book_movie'],
+            '买票': ['book_flight', 'book_train', 'book_movie'],
+            '预订': ['book_flight', 'book_train', 'book_movie'],
+            '机票': ['book_flight'],
+            '火车票': ['book_train'],
+            '电影票': ['book_movie'],
+            '航班': ['book_flight'],
+            '火车': ['book_train'],
+            '电影': ['book_movie'],
+            '飞机': ['book_flight'],
+            '余额': ['check_balance'],
+            '查询': ['check_balance']
+        }
+        
+        # 查找匹配的意图
+        matched_intents = set()
+        for keyword, intent_names in keyword_mappings.items():
+            if keyword in user_input:
+                matched_intents.update(intent_names)
+        
+        # 获取意图详情
+        for intent_name in matched_intents:
+            intent = await self._get_intent_by_name(intent_name)
+            if intent and intent.is_active:
+                candidates.append({
+                    'intent_name': intent.intent_name,
+                    'display_name': intent.display_name,
+                    'confidence': 0.6  # 给一个中等置信度
+                })
+        
+        return candidates
+
     def get_user_choice_analytics(self, user_id: str) -> Dict[str, Any]:
         """
         获取用户选择解析分析（TASK-024新增功能）

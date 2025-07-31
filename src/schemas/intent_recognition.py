@@ -31,6 +31,7 @@ class EntityInfo(BaseModel):
 class AlternativeIntent(BaseModel):
     """备选意图信息"""
     intent_name: str = Field(..., description="意图名称")
+    display_name: Optional[str] = Field(None, description="意图显示名称")
     confidence: float = Field(..., description="置信度", ge=0.0, le=1.0)
     reasoning: Optional[str] = Field(None, description="选择原因")
 
@@ -140,8 +141,20 @@ class IntentRecognitionResult(BaseModel):
         alternative_list = []
         if alternatives:
             for alt in alternatives:
+                intent_name = alt.get('intent', '')
+                display_name = alt.get('display_name', intent_name)
+                # 如果没有display_name，尝试从Intent对象获取
+                if not display_name or display_name == intent_name:
+                    try:
+                        from src.models.intent import Intent
+                        intent_obj = Intent.get(Intent.intent_name == intent_name)
+                        display_name = intent_obj.display_name
+                    except:
+                        display_name = intent_name
+                
                 alternative_list.append(AlternativeIntent(
-                    intent_name=alt.get('intent', ''),
+                    intent_name=intent_name,
+                    display_name=display_name,
                     confidence=alt.get('confidence', 0.0),
                     reasoning=alt.get('reasoning', None)
                 ))
@@ -172,8 +185,20 @@ class IntentRecognitionResult(BaseModel):
         alternative_list = []
         if alternatives:
             for alt in alternatives:
+                intent_name = alt.get('intent_name', alt.get('intent', ''))
+                display_name = alt.get('display_name', intent_name)
+                # 如果没有display_name，尝试从Intent对象获取
+                if not display_name or display_name == intent_name:
+                    try:
+                        from src.models.intent import Intent
+                        intent_obj = Intent.get(Intent.intent_name == intent_name)
+                        display_name = intent_obj.display_name
+                    except:
+                        display_name = intent_name
+                
                 alternative_list.append(AlternativeIntent(
-                    intent_name=alt.get('intent_name', alt.get('intent', '')),
+                    intent_name=intent_name,
+                    display_name=display_name,
                     confidence=alt.get('confidence', 0.0),
                     reasoning=alt.get('reasoning', None)
                 ))
@@ -185,6 +210,67 @@ class IntentRecognitionResult(BaseModel):
             is_ambiguous=is_ambiguous,
             user_input=user_input,
             context=context
+        )
+    
+    @classmethod
+    def from_ambiguous_result(
+        cls,
+        candidates: List[Dict],
+        analysis,
+        user_input: str = None,
+        context: Dict[str, Any] = None
+    ) -> 'IntentRecognitionResult':
+        """从歧义检测结果创建"""
+        
+        # 转换候选意图为备选意图格式
+        alternative_list = []
+        best_candidate = None
+        best_confidence = 0.0
+        
+        for candidate in candidates:
+            intent_name = candidate.get('intent_name', '')
+            confidence = candidate.get('confidence', 0.0)
+            display_name = candidate.get('display_name', intent_name)
+            
+            # 如果没有display_name，尝试从Intent对象获取
+            if not display_name or display_name == intent_name:
+                try:
+                    from src.models.intent import Intent
+                    intent_obj = Intent.get(Intent.intent_name == intent_name)
+                    display_name = intent_obj.display_name
+                except:
+                    display_name = intent_name
+            
+            alternative_list.append(AlternativeIntent(
+                intent_name=intent_name,
+                display_name=display_name,
+                confidence=confidence,
+                reasoning=f"歧义候选: {display_name}"
+            ))
+            
+            # 记录最佳候选
+            if confidence > best_confidence:
+                best_confidence = confidence
+                best_candidate = intent_name
+        
+        # 尝试获取最佳候选的Intent对象
+        best_intent = None
+        if best_candidate:
+            try:
+                from src.models.intent import Intent
+                best_intent = Intent.get(Intent.intent_name == best_candidate)
+            except:
+                pass
+        
+        return cls(
+            intent=best_intent,
+            intent_name=best_candidate,
+            confidence=best_confidence,
+            alternatives=alternative_list,
+            is_ambiguous=True,
+            user_input=user_input,
+            context=context,
+            reasoning=f"检测到歧义: {len(candidates)}个候选意图"
         )
     
     def to_dict(self) -> Dict[str, Any]:
@@ -213,6 +299,7 @@ class IntentRecognitionResult(BaseModel):
             "alternatives": [
                 {
                     "intent_name": alt.intent_name,
+                    "display_name": alt.display_name,
                     "confidence": alt.confidence,
                     "reasoning": alt.reasoning
                 }
@@ -240,6 +327,7 @@ class IntentRecognitionResult(BaseModel):
             'alternatives': [
                 {
                     'intent': alt.intent_name,
+                    'display_name': alt.display_name,
                     'confidence': alt.confidence,
                     'reasoning': alt.reasoning
                 }
@@ -272,10 +360,20 @@ class IntentRecognitionResult(BaseModel):
         )
         self.entities.append(entity)
     
-    def add_alternative(self, intent_name: str, confidence: float, reasoning: str = None):
+    def add_alternative(self, intent_name: str, confidence: float, reasoning: str = None, display_name: str = None):
         """添加备选意图"""
+        # 如果没有提供display_name，尝试从Intent对象获取
+        if not display_name:
+            try:
+                from src.models.intent import Intent
+                intent_obj = Intent.get(Intent.intent_name == intent_name)
+                display_name = intent_obj.display_name
+            except:
+                display_name = intent_name
+        
         alternative = AlternativeIntent(
             intent_name=intent_name,
+            display_name=display_name,
             confidence=confidence,
             reasoning=reasoning
         )

@@ -156,7 +156,7 @@ CREATE TABLE IF NOT EXISTS slots (
     intent_id INT NOT NULL COMMENT '关联意图ID',
     slot_name VARCHAR(100) NOT NULL COMMENT '槽位名称',
     display_name VARCHAR(200) COMMENT '显示名称',
-    slot_type ENUM('text', 'number', 'date', 'time', 'email', 'phone', 'entity', 'boolean') NOT NULL COMMENT '槽位类型',
+    slot_type ENUM('text', 'number', 'date', 'time', 'datetime', 'email', 'phone', 'entity', 'boolean') NOT NULL COMMENT '槽位类型',
     is_required BOOLEAN DEFAULT FALSE COMMENT '是否必填',
     is_list BOOLEAN DEFAULT FALSE COMMENT '是否为列表类型',
     validation_rules JSON COMMENT '验证规则',
@@ -385,7 +385,24 @@ CREATE TABLE IF NOT EXISTS entity_patterns (
     INDEX idx_priority (priority)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='实体识别模式表';
 
--- 13.5. Prompt模板配置表
+-- 13.5. 意图关键词映射表
+CREATE TABLE IF NOT EXISTS intent_keywords (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    keyword VARCHAR(50) NOT NULL COMMENT '关键词',
+    intent_name VARCHAR(100) NOT NULL COMMENT '意图名称',
+    keyword_type ENUM('core_noun', 'action_verb', 'modifier') DEFAULT 'core_noun' COMMENT '关键词类型',
+    weight DECIMAL(3,2) DEFAULT 1.00 COMMENT '权重',
+    is_active BOOLEAN DEFAULT TRUE COMMENT '是否激活',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    INDEX idx_keyword (keyword),
+    INDEX idx_intent_name (intent_name),
+    INDEX idx_keyword_type (keyword_type),
+    INDEX idx_is_active (is_active),
+    UNIQUE KEY uk_keyword_intent (keyword, intent_name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='意图关键词映射表';
+
+-- 13.6. Prompt模板配置表
 CREATE TABLE IF NOT EXISTS prompt_templates (
     id INT PRIMARY KEY AUTO_INCREMENT,
     template_name VARCHAR(100) UNIQUE NOT NULL COMMENT '模板名称',
@@ -438,15 +455,52 @@ CREATE TABLE IF NOT EXISTS slot_dependencies (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='槽位依赖表';
 
+-- 修复conversations表BIGINT外键约束问题  
 CREATE TABLE IF NOT EXISTS intent_ambiguities (
-    id BIGINT PRIMARY KEY AUTO_INCREMENT,
-    conversation_id BIGINT NOT NULL,
-    candidate_intents JSON NOT NULL,
-    resolution_strategy VARCHAR(50),
-    resolved_intent VARCHAR(100),
-    user_choice VARCHAR(100),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    conversation_id BIGINT NOT NULL COMMENT '对话记录ID',
+    user_input TEXT NOT NULL COMMENT '用户输入',
+    candidate_intents JSON NOT NULL COMMENT '候选意图列表',
+    disambiguation_question TEXT COMMENT '消歧问题',
+    disambiguation_options JSON COMMENT '消歧选项',
+    user_choice INT COMMENT '用户选择',
+    resolution_method VARCHAR(20) COMMENT '解决方法',
+    resolved_intent_id INT COMMENT '最终确定的意图ID',
+    resolved_at TIMESTAMP NULL COMMENT '解决时间',
+    resolved BOOLEAN DEFAULT FALSE COMMENT '是否已解决',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
+    INDEX idx_conversation_id (conversation_id),
+    INDEX idx_resolved_created (resolved, created_at),
+    INDEX idx_resolution_method (resolution_method)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='意图歧义处理表';
+
+-- 意图转移记录表
+CREATE TABLE IF NOT EXISTS intent_transfers (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    session_id VARCHAR(100) NOT NULL COMMENT '会话ID',
+    conversation_id BIGINT COMMENT '对话ID',
+    user_id VARCHAR(100) NOT NULL COMMENT '用户ID',
+    from_intent_id INT COMMENT '源意图ID',
+    from_intent_name VARCHAR(100) COMMENT '源意图名称',
+    to_intent_id INT COMMENT '目标意图ID',
+    to_intent_name VARCHAR(100) COMMENT '目标意图名称',
+    transfer_type VARCHAR(20) NOT NULL COMMENT '转移类型',
+    transfer_reason TEXT COMMENT '转移原因',
+    saved_context JSON COMMENT '保存的上下文',
+    transfer_confidence DECIMAL(5,4) COMMENT '转移置信度',
+    is_successful BOOLEAN DEFAULT TRUE COMMENT '是否成功',
+    resumed_at TIMESTAMP NULL COMMENT '恢复时间',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE SET NULL,
+    INDEX idx_session_created (session_id, created_at),
+    INDEX idx_user_transfer (user_id, transfer_type),
+    INDEX idx_intent_pair (from_intent_id, to_intent_id),
+    INDEX idx_transfer_type (transfer_type)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='意图转移记录表';
+
 
 -- ================================
 -- 初始化数据
@@ -472,7 +526,7 @@ INSERT INTO conversation_status (status_name, display_name, description, is_fina
 -- 插入基础意图
 INSERT INTO intents (intent_name, display_name, description, confidence_threshold, priority, category, is_active, examples, fallback_response, created_by, created_at, updated_at) VALUES
 -- 订机票意图
-('book_flight', '订机票', '帮助用户预订航班机票', 0.7000, 1, 'travel', TRUE, 
+('book_flight', '订机票', '帮助用户预订航班机票', 0.4000, 1, 'travel', TRUE, 
 '["我想订一张明天去上海的机票", "帮我预订机票", "我要买机票", "订一张机票", "我想订机票", "预订航班", "购买机票", "我要去北京，帮我订机票", "明天的航班有吗", "我需要订一张机票", "帮我查一下机票", "想要预订明天的航班", "我要订一张去广州的机票", "机票预订", "航班预订", "买机票", "订机票", "book a flight", "book flight ticket", "I want to book a flight"]',
 '抱歉，我无法为您预订机票。请提供出发城市、到达城市和出发日期等信息。', 'system', NOW(), NOW()),
 
@@ -480,6 +534,21 @@ INSERT INTO intents (intent_name, display_name, description, confidence_threshol
 ('check_balance', '查询账户余额', '查询用户银行账户或电子钱包余额', 0.7000, 1, 'banking', TRUE,
 '["查询余额", "我的余额", "账户余额", "余额查询", "帮我查下余额", "我想知道我的余额", "账户里还有多少钱", "查一下我的余额", "银行卡余额", "我的账户余额是多少", "余额是多少", "查询银行卡余额", "我要查余额", "check balance", "account balance", "my balance"]',
 '抱歉，我无法查询您的账户余额。请提供有效的账户信息。', 'system', NOW(), NOW()),
+
+-- 火车票预订意图
+('book_train', '火车票预订', '帮助用户预订火车票', 0.4000, 1, 'travel', TRUE,
+'["我想订火车票", "帮我预订火车票", "我要买火车票", "订一张火车票", "预订火车票", "购买火车票", "我要坐火车去北京", "明天的火车票", "我需要订火车票", "帮我查一下火车票", "想要预订火车票", "我要订一张去上海的火车票", "火车票预订", "买火车票", "订火车票", "book train ticket", "train booking"]',
+'抱歉，我无法为您预订火车票。请提供出发城市、到达城市和出发日期等信息。', 'system', NOW(), NOW()),
+
+-- 电影票预订意图  
+('book_movie', '电影票预订', '帮助用户预订电影票', 0.4000, 1, 'entertainment', TRUE,
+'["我想订电影票", "帮我预订电影票", "我要买电影票", "订一张电影票", "预订电影票", "购买电影票", "我要看电影", "今晚的电影票", "我需要订电影票", "帮我查一下电影票", "想要预订电影票", "我要订电影票看复仇者联盟", "电影票预订", "买电影票", "订电影票", "book movie ticket", "movie booking"]',
+'抱歉，我无法为您预订电影票。请提供电影名称、影院和观影时间等信息。', 'system', NOW(), NOW()),
+
+-- 通用订票意图（用于歧义处理）
+('book_generic', '通用订票', '处理通用订票请求的歧义消解', 0.3000, 1, 'booking', TRUE, 
+'["我想订票", "订票", "我要订票", "帮我订票", "预订票", "买票", "我想买票"]',
+'请问您要订哪种票？', 'system', NOW(), NOW()),
 
 -- 问候意图
 ('greeting', '问候', '用户问候和打招呼', 0.8000, 0, 'general', TRUE,
@@ -489,7 +558,11 @@ INSERT INTO intents (intent_name, display_name, description, confidence_threshol
 -- 再见意图
 ('goodbye', '再见', '用户告别和结束对话', 0.8000, 0, 'general', TRUE,
 '["再见", "拜拜", "谢谢", "没事了", "结束", "退出", "bye", "goodbye", "不用了", "好的，谢谢"]',
-'感谢您的使用，再见！如果还有其他需要，随时可以联系我。', 'system', NOW(), NOW());
+'感谢您的使用，再见！如果还有其他需要，随时可以联系我。', 'system', NOW(), NOW()),
+-- 修改密码意图
+('change_password', '修改密码', '帮助用户修改账户密码', 0.7000, 1, 'security', TRUE,
+'["修改密码", "改密码", "更改密码", "换密码", "密码修改", "我要改密码", "我想修改密码", "更新密码", "重置密码", "帮我改密码", "帮我修改密码", "帮我改一下密码", "帮我改一下登录密码", "我想改登录密码", "修改登录密码", "change password", "update password", "modify password"]',
+'抱歉，我无法直接为您修改密码。请提供当前密码和新密码进行验证。', 'system', NOW(), NOW());
 
 -- 插入槽位配置
 INSERT INTO slots (intent_id, slot_name, display_name, slot_type, is_required, is_list, validation_rules, default_value, prompt_template, error_message, extraction_priority, is_active, created_at, updated_at) VALUES
@@ -517,9 +590,69 @@ NULL, '请问您希望什么时候返程？', '请提供有效的返程日期', 
 'single', '请问您需要预订单程还是往返机票？', '请选择单程或往返', 6, TRUE, NOW(), NOW()),
 
 -- 查询余额相关槽位
+((SELECT id FROM intents WHERE intent_name = 'check_balance'), 'bank_name', '银行名称', 'text', TRUE, FALSE,
+'{"allowed_values": ["招商银行", "工商银行", "建设银行", "农业银行", "中国银行", "交通银行", "平安银行", "兴业银行", "民生银行", "光大银行", "华夏银行", "中信银行"], "examples": ["招商银行", "工商银行", "建设银行"]}',
+NULL, '请问您要查询哪家银行的余额？', '请提供有效的银行名称', 1, TRUE, NOW(), NOW()),
+
 ((SELECT id FROM intents WHERE intent_name = 'check_balance'), 'account_type', '账户类型', 'text', FALSE, FALSE,
 '{"allowed_values": ["银行卡", "储蓄卡", "信用卡", "支付宝", "微信"], "examples": ["银行卡", "储蓄卡", "信用卡"]}',
-'银行卡', '请问您要查询哪种账户的余额？', '请选择有效的账户类型', 1, TRUE, NOW(), NOW());
+NULL, '请问您要查询储蓄卡还是信用卡的余额？', '请选择有效的账户类型', 2, TRUE, NOW(), NOW()),
+-- 修改密码相关槽位
+((SELECT id FROM intents WHERE intent_name = 'change_password'), 'current_password', '当前密码', 'text', TRUE, FALSE,
+'{"min_length": 6, "max_length": 20, "mask_in_logs": true}',
+NULL, '请输入您的当前密码进行验证：', '密码长度应在6-20位之间', 1, TRUE, NOW(), NOW()),
+((SELECT id FROM intents WHERE intent_name = 'change_password'), 'new_password', '新密码', 'text', TRUE, FALSE,
+'{"min_length": 8, "max_length": 20, "complexity_check": true, "mask_in_logs": true}',
+NULL, '请输入新的密码（至少8位，包含字母和数字）：', '新密码必须至少8位，包含字母和数字', 2, TRUE, NOW(), NOW()),
+((SELECT id FROM intents WHERE intent_name = 'change_password'), 'confirm_password', '确认新密码', 'text', TRUE, FALSE,
+'{"min_length": 8, "max_length": 20, "must_match": "new_password", "mask_in_logs": true}',
+NULL, '请再次输入新密码进行确认：', '两次输入的密码不一致，请重新确认', 3, TRUE, NOW(), NOW()),
+
+-- 火车票预订相关槽位
+((SELECT id FROM intents WHERE intent_name = 'book_train'), 'departure_city', '出发城市', 'entity', TRUE, FALSE,
+'{"entity_type": "CITY", "examples": ["北京", "上海", "广州", "深圳", "杭州"], "validation_pattern": "^[\\\\u4e00-\\\\u9fa5]{2,10}$"}',
+NULL, '请问您从哪个城市出发？', '请提供有效的出发城市名称', 1, TRUE, NOW(), NOW()),
+
+((SELECT id FROM intents WHERE intent_name = 'book_train'), 'arrival_city', '到达城市', 'entity', TRUE, FALSE,
+'{"entity_type": "CITY", "examples": ["北京", "上海", "广州", "深圳", "杭州"], "validation_pattern": "^[\\\\u4e00-\\\\u9fa5]{2,10}$"}',
+NULL, '请问您要到哪个城市？', '请提供有效的到达城市名称', 2, TRUE, NOW(), NOW()),
+
+((SELECT id FROM intents WHERE intent_name = 'book_train'), 'departure_date', '出发日期', 'date', TRUE, FALSE,
+'{"format": "YYYY-MM-DD", "examples": ["明天", "后天", "下周一", "2024-12-15"]}',
+NULL, '请问您希望什么时候出发？', '请提供有效的出发日期', 3, TRUE, NOW(), NOW()),
+
+((SELECT id FROM intents WHERE intent_name = 'book_train'), 'passenger_count', '乘客数量', 'number', FALSE, FALSE,
+'{"min_value": 1, "max_value": 6, "examples": ["1", "2", "3", "一个人", "两个人"]}',
+'1', '请问您需要预订几位乘客的火车票？', '乘客数量必须在1-6之间', 4, TRUE, NOW(), NOW()),
+
+((SELECT id FROM intents WHERE intent_name = 'book_train'), 'seat_type', '座位类型', 'text', FALSE, FALSE,
+'{"allowed_values": ["硬座", "软座", "硬卧", "软卧", "高铁二等座", "高铁一等座", "商务座"], "examples": ["硬座", "硬卧", "高铁二等座"]}',
+'硬座', '请问您需要什么座位类型？', '请选择有效的座位类型', 5, TRUE, NOW(), NOW()),
+
+-- 电影票预订相关槽位
+((SELECT id FROM intents WHERE intent_name = 'book_movie'), 'movie_name', '电影名称', 'text', TRUE, FALSE,
+'{"examples": ["复仇者联盟", "泰坦尼克号", "阿凡达", "流浪地球", "你好李焕英"]}',
+NULL, '请问您想看哪部电影？', '请提供有效的电影名称', 1, TRUE, NOW(), NOW()),
+
+((SELECT id FROM intents WHERE intent_name = 'book_movie'), 'cinema_name', '影院名称', 'text', TRUE, FALSE,
+'{"examples": ["万达影城", "CGV影城", "博纳国际影城", "大地影院", "星美国际影城"]}',
+NULL, '请问您想在哪个影院观影？', '请提供有效的影院名称', 2, TRUE, NOW(), NOW()),
+
+((SELECT id FROM intents WHERE intent_name = 'book_movie'), 'show_time', '观影时间', 'text', TRUE, FALSE,
+'{"format": "YYYY-MM-DD HH:mm", "examples": ["今晚8点", "明天下午2点", "周六晚上", "2024-12-15 20:00"]}',
+NULL, '请问您希望什么时候观影？', '请提供有效的观影时间', 3, TRUE, NOW(), NOW()),
+
+((SELECT id FROM intents WHERE intent_name = 'book_movie'), 'ticket_count', '票数', 'number', FALSE, FALSE,
+'{"min_value": 1, "max_value": 10, "examples": ["1", "2", "3", "一张", "两张"]}',
+'1', '请问您需要几张电影票？', '票数必须在1-10之间', 4, TRUE, NOW(), NOW()),
+
+((SELECT id FROM intents WHERE intent_name = 'book_movie'), 'seat_preference', '座位偏好', 'text', FALSE, FALSE,
+'{"allowed_values": ["前排", "中排", "后排", "情侣座", "无偏好"], "examples": ["中排", "后排", "情侣座"]}',
+'无偏好', '请问您对座位有什么偏好？', '请选择有效的座位偏好', 5, TRUE, NOW(), NOW());
+
+-- NOTE: 配置驱动处理器表数据将在表创建后插入
+
+-- NOTE: 响应模板数据将在表创建后插入
 
 -- 插入槽位依赖关系
 INSERT INTO slot_dependencies (parent_slot_id, child_slot_id, dependency_type, conditions, created_at, updated_at) VALUES
@@ -529,6 +662,237 @@ INSERT INTO slot_dependencies (parent_slot_id, child_slot_id, dependency_type, c
  'depends_on',
  '{"context": "round_trip", "calculation": "relative_date", "description": "返程日期依赖于出发日期"}',
  NOW(), NOW());
+
+-- ================================
+-- 配置驱动扩展表
+-- ================================
+
+-- 15. 意图处理器配置表
+CREATE TABLE IF NOT EXISTS intent_handlers (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    intent_id INT NOT NULL COMMENT '意图ID',
+    handler_type ENUM('mock_service', 'api_call', 'database', 'function_call', 'workflow') NOT NULL COMMENT '处理器类型',
+    handler_config JSON NOT NULL COMMENT '处理器配置',
+    fallback_config JSON COMMENT '失败回退配置',
+    execution_order INT DEFAULT 1 COMMENT '执行顺序',
+    timeout_seconds INT DEFAULT 30 COMMENT '超时时间(秒)',
+    retry_count INT DEFAULT 0 COMMENT '重试次数',
+    is_active BOOLEAN DEFAULT TRUE COMMENT '是否激活',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    FOREIGN KEY (intent_id) REFERENCES intents(id) ON DELETE CASCADE,
+    INDEX idx_intent_id (intent_id),
+    INDEX idx_handler_type (handler_type),
+    INDEX idx_execution_order (execution_order)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='意图处理器配置表';
+
+-- 16. 响应模板配置表
+CREATE TABLE IF NOT EXISTS response_templates (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    intent_id INT NOT NULL COMMENT '意图ID',
+    template_type ENUM('confirmation', 'success', 'failure', 'slot_filling', 'clarification', 'custom') NOT NULL COMMENT '模板类型',
+    template_name VARCHAR(100) NOT NULL COMMENT '模板名称',
+    template_content TEXT NOT NULL COMMENT '模板内容',
+    template_variables JSON COMMENT '模板变量定义',
+    conditions JSON COMMENT '使用条件',
+    priority INT DEFAULT 1 COMMENT '优先级',
+    language VARCHAR(10) DEFAULT 'zh' COMMENT '语言',
+    is_active BOOLEAN DEFAULT TRUE COMMENT '是否激活',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    FOREIGN KEY (intent_id) REFERENCES intents(id) ON DELETE CASCADE,
+    INDEX idx_intent_template (intent_id, template_type),
+    INDEX idx_template_type (template_type),
+    INDEX idx_priority (priority)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='响应模板配置表';
+
+-- 17. 意图业务规则配置表
+CREATE TABLE IF NOT EXISTS intent_business_rules (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    intent_id INT NOT NULL COMMENT '意图ID',
+    rule_name VARCHAR(100) NOT NULL COMMENT '规则名称',
+    rule_type ENUM('validation', 'authorization', 'business_logic', 'rate_limit') NOT NULL COMMENT '规则类型',
+    rule_config JSON NOT NULL COMMENT '规则配置',
+    error_message TEXT COMMENT '错误提示信息',
+    execution_phase ENUM('before_processing', 'after_slot_filling', 'before_execution', 'after_execution') DEFAULT 'before_execution' COMMENT '执行阶段',
+    priority INT DEFAULT 1 COMMENT '执行优先级',
+    is_active BOOLEAN DEFAULT TRUE COMMENT '是否激活',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    FOREIGN KEY (intent_id) REFERENCES intents(id) ON DELETE CASCADE,
+    INDEX idx_intent_rule (intent_id, rule_type),
+    INDEX idx_execution_phase (execution_phase),
+    INDEX idx_priority (priority)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='意图业务规则配置表';
+
+-- ================================
+-- 插入配置驱动数据
+-- ================================
+
+-- 插入意图处理器配置
+INSERT INTO intent_handlers (intent_id, handler_type, handler_config, fallback_config, execution_order, timeout_seconds, retry_count, is_active, created_at, updated_at) VALUES
+-- book_flight处理器配置
+((SELECT id FROM intents WHERE intent_name = 'book_flight'), 'mock_service', 
+'{"service_name": "book_flight_service", "mock_delay": 1, "success_rate": 0.95}',
+'{"type": "database", "table": "booking_requests", "status": "pending"}',
+1, 30, 2, TRUE, NOW(), NOW()),
+
+-- check_balance处理器配置
+((SELECT id FROM intents WHERE intent_name = 'check_balance'), 'mock_service',
+'{"service_name": "check_balance_service", "mock_delay": 0.5, "success_rate": 0.98}',
+'{"type": "cache", "fallback_message": "余额查询服务暂时不可用"}',
+1, 15, 1, TRUE, NOW(), NOW()),
+
+-- book_train处理器配置 (配置驱动新增)
+((SELECT id FROM intents WHERE intent_name = 'book_train'), 'mock_service', 
+'{"service_name": "book_train_service", "mock_delay": 1, "success_rate": 0.95}', 
+'{"type": "database", "table": "train_booking_requests", "status": "pending"}',
+1, 30, 2, TRUE, NOW(), NOW()),
+
+-- book_movie处理器配置 (配置驱动新增)
+((SELECT id FROM intents WHERE intent_name = 'book_movie'), 'mock_service',
+'{"service_name": "book_movie_service", "mock_delay": 1, "success_rate": 0.95}',
+'{"type": "database", "table": "movie_booking_requests", "status": "pending"}',
+1, 25, 1, TRUE, NOW(), NOW());
+
+-- 插入功能调用配置
+INSERT INTO function_calls (intent_id, function_name, description, api_endpoint, http_method, headers, parameter_mapping, timeout_seconds, retry_attempts, success_template, error_template, is_active, created_at, updated_at) VALUES
+-- 修改密码功能调用
+((SELECT id FROM intents WHERE intent_name = 'change_password'), 'change_password_mock', '模拟密码修改API', 'http://localhost:8000/api/v1/mock/change_password', 'POST', 
+'{"Content-Type": "application/json"}', 
+'{"current_password": "current_password", "new_password": "new_password", "confirm_password": "confirm_password"}', 
+30, 3, 
+'密码修改成功！您的账户密码已更新，请妥善保管新密码。', 
+'很抱歉，密码修改失败：{error_message}。请检查当前密码是否正确。', 
+TRUE, NOW(), NOW()),
+-- 机票预订功能调用
+((SELECT id FROM intents WHERE intent_name = 'book_flight'), 'book_flight_mock', '模拟机票预订API', 'http://localhost:8000/api/v1/mock/book_flight', 'POST', 
+'{"Content-Type": "application/json"}', 
+'{"departure_city": "departure_city", "arrival_city": "arrival_city", "departure_date": "departure_date"}', 
+30, 3, 
+'您的机票预订成功！订单号：{order_id}，出发：{departure_city}，到达：{arrival_city}，日期：{departure_date}。', 
+'很抱歉，机票预订失败：{error_message}。请稍后重试或联系客服。', 
+TRUE, NOW(), NOW()),
+-- 余额查询功能调用
+((SELECT id FROM intents WHERE intent_name = 'check_balance'), 'check_balance_mock', '模拟余额查询API', 'http://localhost:8000/api/v1/mock/check_balance', 'GET', 
+'{"Content-Type": "application/json"}', 
+'{"account_type": "account_type"}', 
+10, 3, 
+'您的{account_type}余额为：{balance}元，查询时间：{query_time}。', 
+'很抱歉，余额查询失败：{error_message}。请稍后重试或联系客服。', 
+TRUE, NOW(), NOW());
+
+-- 插入响应模板配置
+INSERT INTO response_templates (intent_id, template_type, template_name, template_content, template_variables, conditions, priority, language, is_active, created_at, updated_at) VALUES
+-- book_flight响应模板
+((SELECT id FROM intents WHERE intent_name = 'book_flight'), 'confirmation', 'flight_booking_confirmation',
+'请确认您的航班预订信息：出发城市：{departure_city}，到达城市：{arrival_city}，出发日期：{departure_date}，乘客人数：{passenger_count}人。以上信息是否正确？',
+'{"departure_city": "出发城市", "arrival_city": "到达城市", "departure_date": "出发日期", "passenger_count": "乘客数量"}',
+NULL, 1, 'zh', TRUE, NOW(), NOW()),
+
+((SELECT id FROM intents WHERE intent_name = 'book_flight'), 'success', 'flight_booking_success',
+'机票预订成功！订单号：{order_id}，航程：{departure_city} 到 {arrival_city}，日期：{departure_date}，乘客数：{passenger_count}人。请保存好订单号。',
+'{"order_id": "订单号", "departure_city": "出发城市", "arrival_city": "到达城市", "departure_date": "出发日期", "passenger_count": "乘客数量"}',
+NULL, 1, 'zh', TRUE, NOW(), NOW()),
+
+((SELECT id FROM intents WHERE intent_name = 'book_flight'), 'failure', 'flight_booking_failure',
+'很抱歉，机票预订失败：{error_message}。请稍后重试或联系客服。',
+'{"error_message": "错误信息"}',
+NULL, 1, 'zh', TRUE, NOW(), NOW()),
+
+-- check_balance响应模板
+((SELECT id FROM intents WHERE intent_name = 'check_balance'), 'confirmation', 'balance_check_confirmation',
+'请确认您的查询信息：账户类型：{account_type}。以上信息是否正确？',
+'{"account_type": "账户类型"}',
+NULL, 1, 'zh', TRUE, NOW(), NOW()),
+
+((SELECT id FROM intents WHERE intent_name = 'check_balance'), 'success', 'balance_check_success',
+'{account_type}余额查询成功！余额：{balance}元，查询时间：{query_time}。',
+'{"account_type": "账户类型", "balance": "余额", "query_time": "查询时间"}',
+NULL, 1, 'zh', TRUE, NOW(), NOW()),
+
+((SELECT id FROM intents WHERE intent_name = 'check_balance'), 'failure', 'balance_check_failure',
+'很抱歉，余额查询失败：{error_message}。请稍后重试或联系客服。',
+'{"error_message": "错误信息"}',
+NULL, 1, 'zh', TRUE, NOW(), NOW()),
+-- change_password响应模板
+((SELECT id FROM intents WHERE intent_name = 'change_password'), 'confirmation', 'password_change_confirmation',
+'请确认您的密码修改信息：新密码已设置。请确认是否继续执行密码修改？',
+'{}',
+NULL, 1, 'zh', TRUE, NOW(), NOW()),
+((SELECT id FROM intents WHERE intent_name = 'change_password'), 'success', 'password_change_success',
+'密码修改成功！您的账户密码已更新，请妥善保管新密码。',
+'{}',
+NULL, 1, 'zh', TRUE, NOW(), NOW()),
+((SELECT id FROM intents WHERE intent_name = 'change_password'), 'failure', 'password_change_failure',
+'很抱歉，密码修改失败：{error_message}。请检查当前密码是否正确。',
+'{"error_message": "错误信息"}',
+NULL, 1, 'zh', TRUE, NOW(), NOW()),
+((SELECT id FROM intents WHERE intent_name = 'change_password'), 'slot_filling', 'password_slot_prompt',
+'{prompt_message}',
+'{"prompt_message": "提示信息"}',
+NULL, 1, 'zh', TRUE, NOW(), NOW()),
+((SELECT id FROM intents WHERE intent_name = 'change_password'), 'clarification', 'password_validation_error',
+'{error_message}',
+'{"error_message": "验证错误信息"}',
+NULL, 1, 'zh', TRUE, NOW(), NOW()),
+
+-- book_train响应模板
+((SELECT id FROM intents WHERE intent_name = 'book_train'), 'confirmation', 'train_booking_confirmation',
+'请确认您的火车票预订信息：出发城市：{departure_city}，到达城市：{arrival_city}，出发日期：{departure_date}，座位类型：{seat_type}。以上信息是否正确？',
+'{"departure_city": "出发城市", "arrival_city": "到达城市", "departure_date": "出发日期", "seat_type": "座位类型"}',
+NULL, 1, 'zh', TRUE, NOW(), NOW()),
+
+((SELECT id FROM intents WHERE intent_name = 'book_train'), 'success', 'train_booking_success',
+'火车票预订成功！订单号：{order_id}，车次：{train_number}，出发：{departure_city} 到 {arrival_city}，日期：{departure_date}，座位：{seat_type}。',
+'{"order_id": "订单号", "train_number": "车次", "departure_city": "出发城市", "arrival_city": "到达城市", "departure_date": "出发日期", "seat_type": "座位类型"}',
+NULL, 1, 'zh', TRUE, NOW(), NOW()),
+
+((SELECT id FROM intents WHERE intent_name = 'book_train'), 'failure', 'train_booking_failure',
+'很抱歉，火车票预订失败：{error_message}。请稍后重试或联系客服。',
+'{"error_message": "错误信息"}',
+NULL, 1, 'zh', TRUE, NOW(), NOW()),
+
+-- book_movie响应模板
+((SELECT id FROM intents WHERE intent_name = 'book_movie'), 'confirmation', 'movie_booking_confirmation',
+'请确认您的电影票预订信息：电影名称：{movie_name}，影院名称：{cinema_name}，观影时间：{show_time}。以上信息是否正确？',
+'{"movie_name": "电影名称", "cinema_name": "影院名称", "show_time": "观影时间"}',
+NULL, 1, 'zh', TRUE, NOW(), NOW()),
+
+((SELECT id FROM intents WHERE intent_name = 'book_movie'), 'success', 'movie_booking_success',
+'电影票预订成功！订单号：{order_id}，电影：{movie_name}，影院：{cinema_name}，时间：{show_time}，座位：{seat_info}。',
+'{"order_id": "订单号", "movie_name": "电影名称", "cinema_name": "影院名称", "show_time": "观影时间", "seat_info": "座位信息"}',
+NULL, 1, 'zh', TRUE, NOW(), NOW()),
+
+((SELECT id FROM intents WHERE intent_name = 'book_movie'), 'failure', 'movie_booking_failure',
+'很抱歉，电影票预订失败：{error_message}。请稍后重试或联系客服。',
+'{"error_message": "错误信息"}',
+NULL, 1, 'zh', TRUE, NOW(), NOW()),
+
+-- book_generic响应模板（歧义消解）
+((SELECT id FROM intents WHERE intent_name = 'book_generic'), 'confirmation', 'generic_booking_disambiguation',
+'请问您想要预订哪种票？请选择：\\n1. 机票\\n2. 火车票\\n3. 电影票\\n请输入对应的数字或直接说出您的选择。',
+'{}', NULL, 1, 'zh', TRUE, NOW(), NOW());
+
+-- 插入业务规则配置
+INSERT INTO intent_business_rules (intent_id, rule_name, rule_type, rule_config, error_message, execution_phase, priority, is_active, created_at, updated_at) VALUES
+-- book_flight业务规则
+((SELECT id FROM intents WHERE intent_name = 'book_flight'), 'future_date_validation', 'validation',
+'{"field": "departure_date", "rule": "future_date", "min_days": 0, "max_days": 365}',
+'出发日期必须是今天或未来的日期，且不能超过一年', 'after_slot_filling', 1, TRUE, NOW(), NOW()),
+
+((SELECT id FROM intents WHERE intent_name = 'book_flight'), 'passenger_count_limit', 'validation', 
+'{"field": "passenger_count", "rule": "range", "min": 1, "max": 9}',
+'乘客数量必须在1-9人之间', 'after_slot_filling', 2, TRUE, NOW(), NOW()),
+
+((SELECT id FROM intents WHERE intent_name = 'book_flight'), 'return_date_validation', 'validation',
+'{"field": "return_date", "rule": "after_date", "reference_field": "departure_date", "min_days": 0}',
+'返程日期不能早于出发日期', 'after_slot_filling', 3, TRUE, NOW(), NOW()),
+
+-- check_balance业务规则  
+((SELECT id FROM intents WHERE intent_name = 'check_balance'), 'rate_limit', 'rate_limit',
+'{"max_requests": 10, "time_window": 3600, "scope": "user"}',
+'每小时最多查询10次余额', 'before_processing', 1, TRUE, NOW(), NOW());
 
 -- 插入系统配置
 INSERT INTO system_configs (config_category, config_key, config_value, value_type, description, is_encrypted, is_public, validation_rule, default_value, is_active, created_by, created_at, updated_at) VALUES
@@ -582,6 +946,19 @@ INSERT INTO prompt_templates (template_name, template_type, intent_id, template_
  '查询余额意图存在歧义，需要用户澄清：\n\n候选选项：{candidates}\n用户输入：{user_input}\n\n请生成友好的澄清问题，帮助用户选择正确的账户类型。格式：\n\"我理解您想要查询余额，请问您是想查询：\n1. [账户类型1]\n2. [账户类型2]\n请选择对应的数字。\"',
  '{"candidates": "候选选项列表", "user_input": "用户原始输入"}',
  'zh', '1.0', 2, 0, 0.0000, TRUE, 'system', NOW(), NOW()),
+-- change_password相关Prompt模板
+('change_password_recognition', 'intent_recognition', 2,
+ '根据用户输入判断是否为修改密码意图：\n\n用户输入：{user_input}\n\n判断规则：\n1. 包含\"修改\"、\"更改\"、\"换\"、\"改\"、\"重置\"、\"更新\"等动作词\n2. 包含\"密码\"、\"password\"等关键词\n3. 可能包含\"账户\"、\"登录\"等相关词汇\n\n请分析并返回：\n- 意图识别结果：{intent_name}\n- 置信度：{confidence}\n- 匹配关键词：{matched_keywords}',
+ '{"user_input": "用户原始输入", "intent_name": "意图名称", "confidence": "置信度分数", "matched_keywords": "匹配的关键词列表"}',
+ 'zh', '1.0', 1, 0, 0.0000, TRUE, 'system', NOW(), NOW()),
+('change_password_slot_filling', 'slot_filling', 2,
+ '请从用户输入中提取修改密码相关信息：\n\n用户输入：{user_input}\n当前已知信息：{current_slots}\n\n需要提取的槽位：\n- current_password（当前密码）：用户的当前密码\n- new_password（新密码）：用户想要设置的新密码\n- confirm_password（确认新密码）：再次确认的新密码\n\n安全规则：\n1. 密码信息不应明文记录在日志中\n2. 需要验证新密码复杂度要求\n3. 确认密码必须与新密码一致\n\n请返回JSON格式的提取结果。',
+ '{"user_input": "用户输入", "current_slots": "当前槽位状态"}',
+ 'zh', '1.0', 1, 0, 0.0000, TRUE, 'system', NOW(), NOW()),
+('change_password_response', 'response_generation', 2,
+ '根据槽位填充情况生成修改密码响应：\n\n已填充槽位：{filled_slots}\n缺失槽位：{missing_slots}\n意图：{intent}\n\n响应规则：\n1. 如果缺失当前密码：提示输入当前密码验证身份\n2. 如果缺失新密码：提示输入新密码（至少8位，包含字母和数字）\n3. 如果缺失确认密码：提示再次输入新密码确认\n4. 如果槽位完整：确认是否执行密码修改\n5. 强调密码安全性和保管重要性\n\n生成安全、专业的中文响应。',
+ '{"filled_slots": "已填充的槽位", "missing_slots": "缺失的槽位", "intent": "当前意图"}',
+ 'zh', '1.0', 1, 0, 0.0000, TRUE, 'system', NOW(), NOW()),
 
 -- 通用模板
 ('general_intent_recognition', 'intent_recognition', NULL,
@@ -777,7 +1154,47 @@ INSERT INTO entity_patterns (pattern_name, pattern_regex, entity_type, descripti
 ('时间', '\\d{1,2}[:|：]\\d{1,2}', 'TIME', '时间表达', '["14:30", "上午9点"]', 0.8000, 'system', NOW(), NOW()),
 ('航班号', '[A-Z]{2}\\d{3,4}', 'FLIGHT', '航班号', '["CA1234", "MU5678"]', 0.9500, 'system', NOW(), NOW()),
 ('机场代码', '[A-Z]{3}', 'AIRPORT', '三字机场代码', '["PEK", "SHA", "CAN"]', 0.9000, 'system', NOW(), NOW()),
-('中国城市', '[北京|上海|广州|深圳|杭州|南京|武汉|成都|西安|重庆|天津|青岛|大连|厦门|苏州|无锡|宁波|长沙|郑州|济南|哈尔滨|沈阳|长春|石家庄|太原|呼和浩特|兰州|西宁|银川|乌鲁木齐|拉萨|昆明|贵阳|南宁|海口|三亚|福州|南昌|合肥]+', 'CITY', '中国主要城市', '["北京", "上海", "广州"]', 0.8500, 'system', NOW(), NOW());
+('中国城市', '[北京|上海|广州|深圳|杭州|南京|武汉|成都|西安|重庆|天津|青岛|大连|厦门|苏州|无锡|宁波|长沙|郑州|济南|哈尔滨|沈阳|长春|石家庄|太原|呼和浩特|兰州|西宁|银川|乌鲁木齐|拉萨|昆明|贵阳|南宁|海口|三亚|福州|南昌|合肥]+', 'CITY', '中国主要城市', '["北京", "上海", "广州"]', 0.8500, 'system', NOW(), NOW()),
+('银行名称', '(招商银行|工商银行|建设银行|农业银行|中国银行|交通银行|平安银行|兴业银行|民生银行|光大银行|华夏银行|中信银行|浦发银行|邮储银行|广发银行|深发展|上海银行|北京银行|宁波银行)', 'BANK', '中国主要银行名称', '["招商银行", "工商银行", "建设银行"]', 0.9000, 'system', NOW(), NOW());
+
+-- 插入意图关键词映射数据
+INSERT INTO intent_keywords (keyword, intent_name, keyword_type, weight) VALUES
+-- 订票相关核心名词
+('机票', 'book_flight', 'core_noun', 2.0),
+('火车票', 'book_train', 'core_noun', 2.0),
+('电影票', 'book_movie', 'core_noun', 2.0),
+('航班', 'book_flight', 'core_noun', 1.8),
+('飞机', 'book_flight', 'core_noun', 1.5),
+('票', 'book_generic', 'core_noun', 1.0),
+('票', 'book_flight', 'core_noun', 0.5),
+('票', 'book_train', 'core_noun', 0.5),
+('票', 'book_movie', 'core_noun', 0.5),
+
+-- 余额查询相关核心名词
+('余额', 'check_balance', 'core_noun', 2.0),
+('账户', 'check_balance', 'core_noun', 1.5),
+('银行卡', 'check_balance', 'core_noun', 1.8),
+('钱', 'check_balance', 'core_noun', 1.2),
+
+-- 动作词
+('订', 'book_flight', 'action_verb', 0.3),
+('订', 'book_train', 'action_verb', 0.3),
+('订', 'book_movie', 'action_verb', 0.3),
+('订', 'book_generic', 'action_verb', 0.3),
+('预订', 'book_flight', 'action_verb', 0.3),
+('预订', 'book_train', 'action_verb', 0.3),
+('预订', 'book_movie', 'action_verb', 0.3),
+('预订', 'book_generic', 'action_verb', 0.3),
+('购买', 'book_flight', 'action_verb', 0.3),
+('购买', 'book_train', 'action_verb', 0.3),
+('购买', 'book_movie', 'action_verb', 0.3),
+('买', 'book_flight', 'action_verb', 0.3),
+('买', 'book_train', 'action_verb', 0.3),
+('买', 'book_movie', 'action_verb', 0.3),
+('买', 'book_generic', 'action_verb', 0.3),
+('查询', 'check_balance', 'action_verb', 0.4),
+('查', 'check_balance', 'action_verb', 0.4),
+('看', 'check_balance', 'action_verb', 0.3);
 
 -- 插入实体类型
 INSERT INTO entity_types (type_name, display_name, description, validation_pattern, examples, is_active) VALUES

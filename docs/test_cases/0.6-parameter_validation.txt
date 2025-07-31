@@ -1,0 +1,119 @@
+# 参数验证测试
+
+echo "=== 参数验证测试 ==="
+
+# 测试1：无效日期格式
+echo -e "\n=== 测试1：无效日期 ==="
+curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "validation_user_001",
+    "input": "订明天32月45日的机票"
+  }'
+
+# 测试2：负数金额
+echo -e "\n=== 测试2：负数金额 ==="
+curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "validation_user_002",
+    "input": "查-100元余额"
+  }'
+
+# 测试3：无效地名
+echo -e "\n=== 测试3：无效地名 ==="
+curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "validation_user_003",
+    "input": "订从火星到月球的机票"
+  }'
+
+# 测试4：过去的日期
+echo -e "\n=== 测试4：过去日期 ==="
+curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "validation_user_004",
+    "input": "订2020年1月1日的机票"
+  }'
+
+# 测试5：不存在的银行
+echo -e "\n=== 测试5：不存在银行 ==="
+curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "validation_user_005",
+    "input": "查火星银行的余额"
+  }'
+
+# 测试6：相同出发地和目的地
+echo -e "\n=== 测试6：相同起终点 ==="
+curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "validation_user_006",
+    "input": "订从北京到北京的机票"
+  }'
+
+# 测试7：超长的字符串
+echo -e "\n=== 测试7：超长字符串 ==="
+curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "validation_user_007",
+    "input": "订从北京市朝阳区三里屯街道工人体育场北路13号院1号楼到上海市浦东新区陆家嘴环路1000号上海环球金融中心的机票"
+  }'
+
+# 测试8：极值数量
+echo -e "\n=== 测试8：极值数量 ==="
+curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "validation_user_008",
+    "input": "订明天从北京到上海的机票，99999个人"
+  }'
+
+# 测试9：无效时间表达
+echo -e "\n=== 测试9：无效时间 ==="
+curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "validation_user_009",
+    "input": "订昨天的明天的后天的机票"
+  }'
+
+# 测试10：特殊字符注入
+echo -e "\n=== 测试10：特殊字符 ==="
+curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "validation_user_010",
+    "input": "订从北京<script>alert(\"xss\")</script>到上海的机票"
+  }'
+
+# 测试11：SQL注入尝试
+echo -e "\n=== 测试11：SQL注入 ==="
+curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "validation_user_011",
+    "input": "查余额 OR 1=1; DROP TABLE users;"
+  }'
+
+# 测试12：零值参数
+echo -e "\n=== 测试12：零值参数 ==="
+curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "validation_user_012",
+    "input": "订机票，0个人"
+  }'
+
+# 预期结果：
+# - 系统应该识别并拒绝无效参数
+# - 提供明确的错误提示信息
+# - 建议正确的参数格式
+# - 不应该崩溃或出现异常
+# - 安全过滤恶意输入
+# - 引导用户重新输入正确信息

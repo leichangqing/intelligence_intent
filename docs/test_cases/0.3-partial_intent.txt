@@ -1,0 +1,73 @@
+# 部分信息意图测试
+
+echo "=== 部分信息意图测试 ==="
+
+# 测试1：仅有意图，缺少所有参数
+echo -e "\n=== 测试1：纯意图表达 ==="
+curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "partial_intent_user_001",
+    "input": "我想订机票"
+  }'
+
+# 测试2：有目的地，缺少出发地和时间
+echo -e "\n=== 测试2：部分地点信息 ==="
+curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "partial_intent_user_002",
+    "input": "我要去上海的机票"
+  }'
+
+# 测试3：有时间，缺少地点
+echo -e "\n=== 测试3：部分时间信息 ==="
+curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "partial_intent_user_003",
+    "input": "订明天的机票"
+  }'
+
+# 测试4：余额查询缺少银行信息
+echo -e "\n=== 测试4：缺少银行信息 ==="
+curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "partial_intent_user_004",
+    "input": "帮我查余额"
+  }'
+
+# 测试5：密码修改缺少类型
+echo -e "\n=== 测试5：缺少密码类型 ==="
+curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "partial_intent_user_005",
+    "input": "修改密码"
+  }'
+
+# 测试6：有出发地，缺少目的地和时间
+echo -e "\n=== 测试6：部分出发信息 ==="
+curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "partial_intent_user_006",
+    "input": "从北京出发的机票"
+  }'
+
+# 测试7：银行名称有了，缺少卡类型
+echo -e "\n=== 测试7：部分银行信息 ==="
+curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "partial_intent_user_007",
+    "input": "查招商银行的余额"
+  }'
+
+# 预期结果：
+# - 正确识别意图类型
+# - 提取出已提供的槽位信息
+# - 系统应该主动询问缺失的必要参数
+# - 询问应该有逻辑顺序（先重要后次要）
+# - 询问方式应该清晰明确

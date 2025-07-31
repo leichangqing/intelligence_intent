@@ -1,15 +1,53 @@
 
 
+单轮意图基础测试
+
+  0. 基本意图识别 (Basic Intent Recognition)
+  
+  用户: "订机票"                      → book_flight (简单直接)
+  用户: "查余额"                      → check_balance (明确意图)
+  用户: "改密码"                      → change_password (基础功能)
+
+  1. 完整信息意图 (Complete Information Intent)
+  
+  用户: "我要订明天从北京到上海的机票"  → book_flight + 完整槽位
+  用户: "查一下招商银行储蓄卡的余额"    → check_balance + 具体参数
+  用户: "帮我改一下登录密码"           → change_password + 明确类型
+
+  2. 部分信息意图 (Partial Information Intent)
+  
+  用户: "我想订机票"                   → book_flight + 系统询问缺失信息
+  用户: "帮我查余额"                   → check_balance + 需要询问卡类型
+  用户: "修改密码"                     → change_password + 询问密码类型
+
+  3. 低置信度确认 (Low Confidence Confirmation)
+  
+  用户: "我想出行"                     → 可能是book_flight/book_train
+  用户: "我要用钱"                     → 可能是check_balance/transfer
+  用户: "账户操作"                     → 模糊表达需确认
+
+  4. Fallback处理 (Fallback Handling)
+  
+  用户: "今天天气真好"                 → 无法识别意图
+  用户: "你好吗"                       → 闲聊内容
+  用户: "随机文本abc123"               → 无意义输入
+
+  5. 参数验证 (Parameter Validation)
+  
+  用户: "订明天32月45日的机票"         → 日期格式错误
+  用户: "查-100元余额"                → 参数范围错误
+  用户: "订从火星到月球的机票"         → 无效地名
+
   多轮对话间隔意图
 
-  1. 意图切换与恢复 (Intent Switching & Resume)
+  6. 意图切换与恢复 (Intent Switching & Resume)
 
   用户: "我想订一张明天去上海的机票"  → book_flight
   用户: "今天天气怎么样"              → weather_query
   用户: "查一下我的银行卡余额"        → check_balance
   用户: "继续订票，从武汉出发"        → 恢复book_flight + 槽位补充
 
-  2. 槽位纠错与重填 (Slot Correction)
+  7. 槽位纠错与重填 (Slot Correction)
 
   用户: "我想订一张明天去上海的机票"
   系统: "请问您从哪个城市出发？"
@@ -17,7 +55,7 @@
   系统: "确认信息：北京→上海，明天..."
   用户: "不对，是武汉出发"           → 槽位纠错
 
-  3. 复杂槽位依赖 (Complex Slot Dependencies)
+  8. 复杂槽位依赖 (Complex Slot Dependencies)
 
   用户: "我要订往返机票"
   系统: "请问出发和目的地城市？"
@@ -26,12 +64,12 @@
   用户: "下周一"
   系统: "请问返程日期？"            → 依赖出发日期的返程日期
 
-  4. 多意图并行处理 (Multi-Intent Parallel)
+  9. 多意图并行处理 (Multi-Intent Parallel)
 
   用户: "帮我订明天去上海的机票，然后查一下银行卡余额"
   → 同时处理book_flight和check_balance两个意图
 
-  5. 上下文歧义消解 (Contextual Disambiguation)
+  10. 上下文歧义消解 (Contextual Disambiguation)
 
   用户: "我想订票"                   → 可能是机票/火车票/电影票
   系统: "请问您要订什么票？"

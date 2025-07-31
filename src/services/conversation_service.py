@@ -290,13 +290,14 @@ class ConversationService:
         Returns:
             List[Dict]: 对话历史列表
         """
-        # 尝试从缓存获取
-        cache_key = self.cache_service.get_cache_key('conversation_history', session_id=session_id, limit=limit)
-        cached_history = await self.cache_service.get(cache_key, namespace=self.cache_namespace)
-        
-        if cached_history:
-            logger.debug(f"从缓存获取对话历史: {session_id}")
-            return cached_history
+        # 暂时跳过缓存，直接从数据库获取以调试问题
+        logger.info(f"直接从数据库获取对话历史: {session_id}")
+        # cache_key = self.cache_service.get_cache_key('conversation_history', session_id=session_id, limit=limit)
+        # cached_history = await self.cache_service.get(cache_key, namespace=self.cache_namespace)
+        # 
+        # if cached_history:
+        #     logger.debug(f"从缓存获取对话历史: {session_id}")
+        #     return cached_history
         
         # 从数据库获取
         try:
@@ -324,6 +325,9 @@ class ConversationService:
                 except (json.JSONDecodeError, AttributeError):
                     response = conv.system_response or ""
                 
+                # 调试日志：显示从数据库读取到的原始数据
+                logger.info(f"数据库记录 {conv.id}: user_input='{conv.user_input}', intent='{conv.intent_recognized}', status='{conv.status}', response_type='{conv.response_type}'")
+                
                 record = {
                     'id': conv.id,
                     'user_input': conv.user_input,
@@ -344,13 +348,14 @@ class ConversationService:
                     conv.response_type not in ['system_error', 'validation_error']):
                     successful_history.append(record)
             
-            # 按时间正序排列
-            history.reverse()
-            successful_history.reverse()
+            # 保持时间倒序排列（最新的记录在前面）
+            # history.reverse()
+            # successful_history.reverse()
             
-            # 只缓存成功的对话记录
-            await self.cache_service.set(cache_key, successful_history, 
-                                       ttl=300, namespace=self.cache_namespace)
+            # 暂时跳过缓存以调试问题
+            # cache_key = self.cache_service.get_cache_key('conversation_history', session_id=session_id, limit=limit)
+            # await self.cache_service.set(cache_key, successful_history, 
+            #                            ttl=300, namespace=self.cache_namespace)
             
             return history
             
@@ -403,11 +408,26 @@ class ConversationService:
         try:
             session = Session.get(Session.session_id == session_id)
             
+            # 查找或创建对话记录
+            try:
+                conversation = Conversation.get(
+                    (Conversation.session_id == session_id) & 
+                    (Conversation.user_input == user_input)
+                )
+            except Conversation.DoesNotExist:
+                # 如果找不到对应的对话记录，创建一个临时记录
+                conversation = Conversation.create(
+                    session_id=session_id,
+                    user_id=session.user_id,
+                    user_input=user_input,
+                    status='ambiguous',
+                    metadata={'created_for_ambiguity': True}
+                )
+            
             ambiguity = IntentAmbiguity.create(
-                session=session,
+                conversation=conversation,
                 user_input=user_input,
-                candidate_intents=json.dumps(candidates, ensure_ascii=False),
-                status='pending'
+                candidate_intents=json.dumps(candidates, ensure_ascii=False)
             )
             
             logger.info(f"记录意图歧义: session={session_id}, candidates_count={len(candidates)}")
@@ -429,9 +449,10 @@ class ConversationService:
         """
         try:
             ambiguity = IntentAmbiguity.get_by_id(ambiguity_id)
-            ambiguity.selected_intent = selected_intent
-            ambiguity.status = 'resolved'
+            ambiguity.resolved = True
             ambiguity.resolved_at = datetime.now()
+            ambiguity.resolution_method = 'user_clarification'
+            # Note: resolved_intent_id would need the intent ID, but we store the intent name in logs
             ambiguity.save()
             
             logger.info(f"解决意图歧义: ambiguity_id={ambiguity_id}, selected={selected_intent}")
@@ -440,6 +461,134 @@ class ConversationService:
         except IntentAmbiguity.DoesNotExist:
             logger.error(f"歧义记录不存在: {ambiguity_id}")
             return False
+    
+    async def get_pending_disambiguation(self, session_id: str) -> Optional[IntentAmbiguity]:
+        """获取会话的待处理歧义记录
+        
+        Args:
+            session_id: 会话ID
+            
+        Returns:
+            IntentAmbiguity: 待处理的歧义记录，如果没有则返回None
+        """
+        try:
+            # 查找最近的未解决歧义记录
+            ambiguity = (IntentAmbiguity
+                        .select()
+                        .join(Conversation)
+                        .where(
+                            (Conversation.session_id == session_id) &
+                            (IntentAmbiguity.resolved == False)
+                        )
+                        .order_by(IntentAmbiguity.created_at.desc())
+                        .first())
+            
+            return ambiguity
+        except Exception as e:
+            logger.error(f"获取待处理歧义记录失败: {str(e)}")
+            return None
+    
+    async def try_resolve_disambiguation_with_input(self, session_id: str, user_input: str) -> Optional[Dict[str, Any]]:
+        """尝试使用用户输入解决待处理的歧义
+        
+        Args:
+            session_id: 会话ID
+            user_input: 用户输入
+            
+        Returns:
+            Dict: 解决结果，包含匹配的意图信息，如果没有匹配则返回None
+        """
+        try:
+            # 获取待处理的歧义记录
+            pending_ambiguity = await self.get_pending_disambiguation(session_id)
+            if not pending_ambiguity:
+                return None
+            
+            # 解析候选意图
+            candidate_intents = json.loads(pending_ambiguity.candidate_intents)
+            
+            # 清理用户输入以便匹配
+            clean_input = user_input.strip().lower()
+            
+            # 尝试匹配候选意图
+            best_match = None
+            best_score = 0.0
+            
+            for candidate in candidate_intents:
+                intent_name = candidate['intent_name']
+                display_name = candidate['display_name']
+                
+                # 计算匹配度
+                score = self._calculate_disambiguation_match_score(clean_input, intent_name, display_name)
+                
+                if score > best_score and score > 0.6:  # 阈值为0.6
+                    best_match = candidate
+                    best_score = score
+            
+            if best_match:
+                # 解决歧义
+                await self.resolve_intent_ambiguity(pending_ambiguity.id, best_match['intent_name'])
+                
+                logger.info(f"通过用户输入解决歧义: '{user_input}' -> {best_match['intent_name']} (score: {best_score:.3f})")
+                
+                return {
+                    'intent_name': best_match['intent_name'],
+                    'display_name': best_match['display_name'],
+                    'confidence': best_match['confidence'],
+                    'disambiguation_resolved': True,
+                    'match_score': best_score
+                }
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"尝试解决歧义失败: {str(e)}")
+            return None
+    
+    def _calculate_disambiguation_match_score(self, user_input: str, intent_name: str, display_name: str) -> float:
+        """计算用户输入和意图候选的匹配度
+        
+        Args:
+            user_input: 清理后的用户输入
+            intent_name: 意图名称
+            display_name: 显示名称
+            
+        Returns:
+            float: 匹配度得分 (0-1)
+        """
+        # 关键词匹配规则
+        keyword_mappings = {
+            'book_flight': ['机票', '航班', '飞机', '飞行', '订机票'],
+            'book_movie': ['电影', '影票', '观影', '看电影', '订电影票'],
+            'book_train': ['火车', '高铁', '动车', '铁路', '订火车票'],
+            'book_hotel': ['酒店', '宾馆', '住宿', '订房', '预订酒店'],
+            'book_generic': ['预订', '订票', '买票']
+        }
+        
+        # 获取意图对应的关键词
+        keywords = keyword_mappings.get(intent_name, [])
+        if not keywords:
+            # 如果没有预定义关键词，使用display_name进行匹配
+            keywords = [display_name.lower()]
+        
+        # 计算匹配度
+        max_score = 0.0
+        
+        for keyword in keywords:
+            if keyword in user_input:
+                # 完全匹配得分更高
+                if user_input == keyword:
+                    max_score = max(max_score, 1.0)
+                elif user_input.startswith(keyword) or user_input.endswith(keyword):
+                    max_score = max(max_score, 0.9)
+                else:
+                    max_score = max(max_score, 0.8)
+        
+        # 检查display_name匹配
+        if display_name and display_name.lower() in user_input:
+            max_score = max(max_score, 0.85)
+        
+        return max_score
     
     async def record_intent_transfer(self, session_id: str, from_intent: str,
                                    to_intent: str, transfer_reason: str) -> IntentTransfer:

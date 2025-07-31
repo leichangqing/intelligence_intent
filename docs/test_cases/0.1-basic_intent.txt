@@ -1,0 +1,57 @@
+# 基本意图识别测试
+
+echo "=== 基本意图识别测试 ==="
+
+# 测试1：简单直接的意图
+echo -e "\n=== 测试1：订机票 ==="
+curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "basic_intent_user_001",
+    "input": "订机票"
+  }'
+
+echo -e "\n=== 测试2：查余额 ==="
+curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "basic_intent_user_002", 
+    "input": "查余额"
+  }'
+
+echo -e "\n=== 测试3：改密码 ==="
+curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "basic_intent_user_003",
+    "input": "改密码"
+  }'
+
+# 测试4：其他基本意图变体
+echo -e "\n=== 测试4：意图变体 ==="
+curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "basic_intent_user_004",
+    "input": "买票"
+  }'
+
+curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "basic_intent_user_005",
+    "input": "查看余额"
+  }'
+
+curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "basic_intent_user_006",
+    "input": "修改密码"
+  }'
+
+# 预期结果：
+# - 系统应该能够识别出对应的意图类型
+# - book_flight、check_balance、change_password等
+# - 置信度应该较高（>0.8）
+# - 后续应该询问缺失的必要参数

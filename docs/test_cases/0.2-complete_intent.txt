@@ -1,0 +1,64 @@
+# 完整信息意图测试
+
+echo "=== 完整信息意图测试 ==="
+
+# 测试1：完整的机票预订信息
+echo -e "\n=== 测试1：完整机票信息 ==="
+curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "complete_intent_user_001",
+    "input": "我要订明天从北京到上海的机票"
+  }'
+
+# 测试2：完整的余额查询信息
+echo -e "\n=== 测试2：完整余额查询 ==="
+curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "complete_intent_user_002",
+    "input": "查一下招商银行储蓄卡的余额"
+  }'
+
+# 测试3：完整的密码修改信息
+echo -e "\n=== 测试3：完整密码修改 ==="
+curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "complete_intent_user_003",
+    "input": "帮我改一下登录密码"
+  }'
+
+# 测试4：更详细的机票信息
+echo -e "\n=== 测试4：详细机票信息 ==="
+curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "complete_intent_user_004",
+    "input": "订后天下午从深圳到广州的经济舱机票，1个人"
+  }'
+
+# 测试5：完整时间表达
+echo -e "\n=== 测试5：完整时间表达 ==="
+curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "complete_intent_user_005",
+    "input": "我要订2024年8月15日从武汉到成都的机票"
+  }'
+
+# 测试6：完整银行信息
+echo -e "\n=== 测试6：完整银行信息 ==="
+curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "complete_intent_user_006",
+    "input": "查询中国银行信用卡账户余额"
+  }'
+
+# 预期结果：
+# - 系统应该识别出正确的意图
+# - 提取出所有提供的槽位信息
+# - 对于完整信息，直接进入执行阶段
+# - 槽位填充率应该很高
+# - 减少或避免反问

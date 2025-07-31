@@ -1,0 +1,82 @@
+# 低置信度确认测试
+
+echo "=== 低置信度确认测试 ==="
+
+# 测试1：模糊的出行意图
+echo -e "\n=== 测试1：模糊出行 ==="
+curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "low_confidence_user_001",
+    "input": "我想出行"
+  }'
+
+# 测试2：模糊的金融意图
+echo -e "\n=== 测试2：模糊金融 ==="
+curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "low_confidence_user_002",
+    "input": "我要用钱"
+  }'
+
+# 测试3：模糊的账户操作
+echo -e "\n=== 测试3：模糊账户操作 ==="
+curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "low_confidence_user_003",
+    "input": "账户操作"
+  }'
+
+# 测试4：模糊的票务请求
+echo -e "\n=== 测试4：模糊票务 ==="
+curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "low_confidence_user_004",
+    "input": "我想买票"
+  }'
+
+# 测试5：模糊的查询请求
+echo -e "\n=== 测试5：模糊查询 ==="
+curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "low_confidence_user_005",
+    "input": "我想查一下"
+  }'
+
+# 测试6：模糊的服务请求
+echo -e "\n=== 测试6：模糊服务 ==="
+curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "low_confidence_user_006",
+    "input": "帮我办理业务"
+  }'
+
+# 测试7：间接表达的意图
+echo -e "\n=== 测试7：间接表达 ==="
+curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "low_confidence_user_007",
+    "input": "我需要去外地"
+  }'
+
+# 测试8：模糊的安全操作
+echo -e "\n=== 测试8：模糊安全操作 ==="
+curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "low_confidence_user_008",
+    "input": "我想更新一些信息"
+  }'
+
+# 预期结果：
+# - 系统识别出多个可能的意图
+# - 置信度应该都比较低（<0.7）
+# - 系统应该提供候选选项让用户选择
+# - 歧义消解应该清晰明确
+# - 避免错误的意图假设

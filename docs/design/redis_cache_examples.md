@@ -3,11 +3,13 @@
 ## v2.2 版本主要更新
 
 **架构优化变化**:
-- **混合架构设计**: 计算层无状态，存储层有状态，支持多轮对话的历史上下文推理
+- **B2B混合架构设计**: 计算层无状态，存储层有状态，支持多轮对话的历史上下文推理
 - **数据结构规范化**: conversations表移除slots_filled/slots_missing字段，槽位信息从slot_values表动态获取
+- **配置驱动处理器**: 重构意图执行和确认信息生成的硬编码，支持intent_handlers和response_templates配置表
 - **新增模型支持**: 支持entity_types、entity_dictionary、response_types、conversation_status等新模型的缓存
 - **应用层缓存管理**: 缓存失效逻辑从数据库触发器迁移到应用层事件驱动机制  
 - **异步日志缓存**: 新增async_log_queue和cache_invalidation_logs的缓存策略
+- **B2B企业特性**: 全面支持企业级用户管理、成本中心、审批流程等业务需求
 
 ## 1. 统一缓存键命名规范
 
@@ -50,7 +52,14 @@ CACHE_KEY_TEMPLATES = {
     'prompt_templates': 'intent_system:prompt_templates:{template_type}',
     'slot_extraction_rules': 'intent_system:slot_rules:{slot_id}',
     'async_log_status': 'intent_system:async_log_status:{log_type}',
-    'cache_invalidation': 'intent_system:cache_invalidation:{table_name}:{record_id}'
+    'cache_invalidation': 'intent_system:cache_invalidation:{table_name}:{record_id}',
+    
+    # B2B配置驱动模板
+    'intent_handlers': 'intent_system:intent_handlers:{intent_id}',
+    'response_templates': 'intent_system:response_templates:{intent_id}:{template_type}',
+    'business_rules': 'intent_system:business_rules:{intent_id}',
+    'slot_dependencies': 'intent_system:slot_deps:{intent_id}',
+    'config_driven_processor': 'intent_system:config_processor:{intent_name}'
 }
 ```
 
@@ -66,6 +75,9 @@ CACHE_KEY_TEMPLATES = {
 - **响应类型**: 3600秒 (1小时) *v2.2新增*
 - **异步日志状态**: 300秒 (5分钟) *v2.2新增*
 - **缓存失效记录**: 1800秒 (30分钟) *v2.2新增*
+- **意图处理器配置**: 3600秒 (1小时) *B2B新增*
+- **响应模板配置**: 3600秒 (1小时) *B2B新增*
+- **业务规则配置**: 3600秒 (1小时) *B2B新增*
 
 ## 2. 混合架构会话缓存
 
@@ -956,3 +968,202 @@ user_key = cache_service.get_cache_key('user_profile', user_id=user_id)
 5. **B2B企业特性** - 完整支持企业级数据结构和业务流程
 
 所有示例都基于MySQL Schema v2.2的最新架构设计！
+
+## 16. B2B配置驱动处理器缓存
+
+### 16.1 意图处理器配置缓存
+**Key**: `intent_system:intent_handlers:1`
+**TTL**: 3600秒
+**数据结构**: JSON
+
+```json
+{
+  "intent_id": 1,
+  "intent_name": "book_flight",
+  "handlers": [
+    {
+      "id": 123,
+      "handler_type": "mock_service",
+      "handler_config": {
+        "service_name": "book_flight_service",
+        "mock_delay": 1,
+        "success_rate": 0.95,
+        "api_endpoint": "https://api.enterprise-travel.com/v1/booking",
+        "timeout_seconds": 30
+      },
+      "fallback_config": {
+        "fallback_service": "backup_flight_service",
+        "max_retries": 3,
+        "circuit_breaker_threshold": 5
+      },
+      "execution_order": 1,
+      "timeout_seconds": 30,
+      "retry_count": 2,
+      "is_active": true
+    }
+  ],
+  "cached_at": "2024-01-20T10:30:00Z"
+}
+```
+
+### 16.2 响应模板配置缓存
+**Key**: `intent_system:response_templates:1:confirmation`
+**TTL**: 3600秒
+**数据结构**: JSON
+
+```json
+{
+  "intent_id": 1,
+  "intent_name": "book_flight",
+  "template_type": "confirmation",
+  "templates": [
+    {
+      "id": 456,
+      "template_name": "flight_booking_confirmation",
+      "template_content": "✈️ 请确认您的航班预订信息：\n\n🏙️ 出发城市：{departure_city}\n🏙️ 到达城市：{arrival_city}\n📅 出发日期：{departure_date}\n👥 乘客人数：{passenger_count}人\n\n以上信息是否正确？\n• 输入「确认」或「是」来预订机票\n• 输入「修改」来重新填写信息\n• 输入「取消」来取消预订",
+      "template_variables": ["departure_city", "arrival_city", "departure_date", "passenger_count"],
+      "conditions": {},
+      "priority": 1,
+      "language": "zh",
+      "is_active": true
+    }
+  ],
+  "cached_at": "2024-01-20T10:30:00Z"
+}
+```
+
+### 16.3 业务规则配置缓存
+**Key**: `intent_system:business_rules:1`
+**TTL**: 3600秒
+**数据结构**: JSON
+
+```json
+{
+  "intent_id": 1,
+  "intent_name": "book_flight",
+  "business_rules": [
+    {
+      "id": 789,
+      "rule_name": "cost_approval_required",
+      "rule_type": "approval",
+      "rule_config": {
+        "threshold_amount": 1000.00,
+        "currency": "CNY",
+        "approval_levels": ["manager", "director"],
+        "auto_approve_conditions": {
+          "employee_level": "senior",
+          "department": "sales",
+          "amount_limit": 500.00
+        }
+      },
+      "execution_order": 1,
+      "is_active": true
+    },
+    {
+      "id": 790,
+      "rule_name": "travel_policy_validation",
+      "rule_type": "validation",
+      "rule_config": {
+        "allowed_classes": ["economy", "premium_economy"],
+        "advance_booking_days": 7,
+        "blackout_dates": ["2024-02-10", "2024-02-17"],
+        "preferred_airlines": ["国航", "东航", "南航"]
+      },
+      "execution_order": 2,
+      "is_active": true
+    }
+  ],
+  "cached_at": "2024-01-20T10:30:00Z"
+}
+```
+
+### 16.4 配置驱动处理器状态缓存
+**Key**: `intent_system:config_processor:book_flight`
+**TTL**: 1800秒
+**数据结构**: JSON
+
+```json
+{
+  "intent_name": "book_flight",
+  "processor_status": {
+    "is_initialized": true,
+    "last_config_reload": "2024-01-20T10:00:00Z",
+    "handler_count": 1,
+    "template_count": 3,
+    "rule_count": 2,
+    "cache_status": "hot"
+  },
+  "performance_metrics": {
+    "avg_processing_time_ms": 245,
+    "success_rate": 0.96,
+    "cache_hit_rate": 0.89,
+    "total_requests_24h": 1250
+  },
+  "configuration_hash": "abc123def456",
+  "dependencies": [
+    "intent_system:intent_handlers:1",
+    "intent_system:response_templates:1:confirmation",
+    "intent_system:response_templates:1:success",
+    "intent_system:response_templates:1:failure",
+    "intent_system:business_rules:1"
+  ],
+  "last_updated": "2024-01-20T10:30:00Z"
+}
+```
+
+## 17. B2B企业级缓存优化
+
+### 17.1 配置变更检测
+**Key**: `intent_system:config_changes:detection`
+**TTL**: 300秒
+**数据结构**: JSON
+
+```json
+{
+  "last_check": "2024-01-20T10:30:00Z",
+  "changes_detected": [
+    {
+      "table": "intent_handlers",
+      "record_id": 123,
+      "change_type": "UPDATE",
+      "affected_caches": [
+        "intent_system:intent_handlers:1",
+        "intent_system:config_processor:book_flight"
+      ],
+      "timestamp": "2024-01-20T10:25:00Z"
+    }
+  ],
+  "invalidation_pending": true,
+  "next_check": "2024-01-20T10:35:00Z"
+}
+```
+
+### 17.2 B2B多租户缓存隔离
+**Key**: `intent_system:tenant:enterprise_001:config`
+**TTL**: 7200秒
+**数据结构**: JSON
+
+```json
+{
+  "tenant_id": "enterprise_001",
+  "tenant_name": "大型企业集团",
+  "cache_namespace": "intent_system:tenant:enterprise_001",
+  "configuration": {
+    "max_cache_size_mb": 512,
+    "cache_isolation_level": "strict",
+    "allowed_cache_types": [
+      "session", "intent_config", "user_profile", 
+      "intent_handlers", "response_templates", "business_rules"
+    ],
+    "cache_retention_hours": 48,
+    "performance_monitoring": true
+  },
+  "statistics": {
+    "total_cache_keys": 15678,
+    "memory_usage_mb": 234.5,
+    "hit_rate_24h": 0.91,
+    "active_sessions": 156
+  },
+  "last_updated": "2024-01-20T10:30:00Z"
+}
+```

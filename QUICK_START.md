@@ -2,7 +2,7 @@
 
 ## 项目概述
 
-智能意图识别系统v2.2是基于FastAPI + MySQL + Peewee + Redis + LangChain + Duckling技术栈构建的混合架构意图识别服务。
+智能意图识别系统v2.2是基于FastAPI + MySQL + Peewee + Redis + LangChain + Duckling技术栈构建的B2B混合架构意图识别服务，支持配置驱动的企业级对话处理。
 
 ## 🏗️ 混合架构设计核心理念
 
@@ -23,6 +23,9 @@
 - 🏢 实体词典和响应类型管理
 - 📊 完整的监控和日志系统
 - 💬 多轮对话历史推理和上下文继承
+- ⚙️ **配置驱动处理器** (intent_handlers表驱动的意图执行)
+- 📝 **动态响应模板** (response_templates表管理的响应生成)
+- 🏛️ **企业级业务规则** (intent_business_rules表支持的审批流程)
 
 ## 环境要求
 
@@ -209,12 +212,26 @@ curl -X POST "http://localhost:8000/api/v1/chat/interact" \
 
 系统启动后会自动创建示例数据：
 
-### 内置意图
+### 内置意图 (配置驱动示例)
 1. **book_flight** (订机票)
    - 槽位：出发城市、到达城市、出发日期、返程日期、乘客数量、座位等级
+   - 处理器：mock_service (可配置为真实API)
+   - 响应模板：confirmation, success, failure
 
 2. **check_balance** (查银行卡余额)
    - 槽位：银行卡号、验证码
+   - 处理器：mock_service (可配置为真实API)
+   - 响应模板：confirmation, success, failure
+
+3. **book_train** (火车票预订) - v2.2新增
+   - 槽位：出发城市、到达城市、出发日期、座位类型、乘车人数
+   - 处理器：配置驱动的服务调用
+   - 响应模板：动态生成的确认和结果模板
+
+4. **book_movie** (电影票预订) - v2.2新增
+   - 槽位：电影名称、影院名称、观影时间、票数、座位偏好
+   - 处理器：配置驱动的服务调用
+   - 响应模板：动态生成的确认和结果模板
 
 ### 混合架构测试场景
 
@@ -318,6 +335,55 @@ curl -X POST "http://localhost:8000/api/v1/chat/interact" \
   }'
 ```
 
+#### 7. 配置驱动火车票预订 (v2.2新功能)
+```bash
+curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "enterprise_user_006",
+    "input": "我要订一张明天从北京到上海的火车票",
+    "context": {
+      "business_context": {
+        "department": "marketing",
+        "cost_center": "CC1002",
+        "approval_required": false
+      },
+      "client_system_id": "enterprise_travel_system"
+    }
+  }'
+```
+
+#### 8. 配置驱动电影票预订 (v2.2新功能)
+```bash
+curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "enterprise_user_007",
+    "input": "我想订电影票看《流浪地球3》",
+    "context": {
+      "location": {
+        "city": "北京",
+        "timezone": "Asia/Shanghai"
+      },
+      "client_system_id": "entertainment_booking_system"
+    }
+  }'
+```
+
+#### 9. 测试动态响应模板
+```bash
+curl -X POST "http://localhost:8000/api/v1/chat/interact" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "enterprise_user_008",
+    "input": "确认",
+    "session_id": "sess_existing_conversation",
+    "context": {
+      "client_system_id": "template_test_system"
+    }
+  }'
+```
+
 ## 常用命令
 
 ```bash
@@ -348,7 +414,7 @@ make clean
 
 ## 开发指南
 
-### 添加新意图
+### 添加新意图 (配置驱动模式)
 
 1. **数据库配置**：在管理接口中添加新意图
 ```bash
@@ -365,7 +431,25 @@ curl -X POST "http://localhost:8000/api/v1/admin/intents" \
 
 2. **添加槽位**：为新意图添加槽位配置
 
-3. **功能调用**：配置外部API调用
+3. **配置处理器** (v2.2新增)：在intent_handlers表中配置处理逻辑
+```bash
+# 示例：添加酒店预订处理器配置
+INSERT INTO intent_handlers (intent_id, handler_type, handler_config, is_active) VALUES 
+((SELECT id FROM intents WHERE intent_name = 'book_hotel'), 'api_service', 
+'{"service_name": "hotel_booking_service", "api_endpoint": "https://api.hotel.com/v1/booking", "timeout_seconds": 30}', 
+TRUE);
+```
+
+4. **配置响应模板** (v2.2新增)：在response_templates表中配置响应格式
+```bash
+# 示例：添加酒店预订确认模板
+INSERT INTO response_templates (intent_id, template_type, template_content, is_active) VALUES
+((SELECT id FROM intents WHERE intent_name = 'book_hotel'), 'confirmation',
+'🏨 请确认您的酒店预订信息：\n\n📍 酒店名称：{hotel_name}\n📅 入住日期：{check_in_date}\n📅 退房日期：{check_out_date}\n\n以上信息是否正确？',
+TRUE);
+```
+
+5. **功能调用**：配置外部API调用 (由intent_handlers表管理)
 
 ### 项目结构说明
 
@@ -389,6 +473,8 @@ src/
    - ✅ **Redis缓存服务未初始化警告**: 已优化服务启动顺序
    - ✅ **CacheService.generate_key方法不存在**: 已统一使用get_cache_key方法
    - ✅ **FunctionService.execute_function_call方法缺失**: 已实现功能调用执行方法
+   - ✅ **ConfigDrivenIntentProcessor数据库导入错误**: 已修复配置驱动处理器的导入问题
+   - ✅ **数据库初始化脚本执行顺序问题**: 已修复mysql_schemav2.3.sql的表创建顺序
 
 1. **数据库连接失败**
    - 检查MySQL服务是否启动
@@ -428,6 +514,9 @@ tail -f logs/app.log
    - 实体词典缓存：7200秒 TTL
    - 响应类型缓存：3600秒 TTL
    - 异步日志状态：300秒 TTL
+   - **意图处理器配置缓存**: 3600秒 TTL (配置驱动)
+   - **响应模板缓存**: 3600秒 TTL (动态模板)
+   - **业务规则缓存**: 3600秒 TTL (企业级规则)
 
 2. **数据库优化v2.2**：
    - 使用v_active_intents和v_conversation_summary视图
@@ -444,15 +533,24 @@ tail -f logs/app.log
 
 ## v2.2混合架构亮点
 
-### 1. 混合架构设计
+### 1. B2B混合架构设计
 
-**核心原则**: 计算无状态 + 存储有状态
+**核心原则**: 计算无状态 + 存储有状态 + 配置驱动
 - **API层无状态**: 每次请求独立处理，支持负载均衡和水平扩展
 - **数据层有状态**: 持久化对话历史和会话状态，支持多轮推理
 - **智能上下文**: 基于历史对话的意图识别和槽位继承
+- **配置驱动**: intent_handlers和response_templates表驱动的业务逻辑
 - **v2.2优化**: 修复了Redis缓存服务初始化顺序，消除启动警告
 
-### 2. 缓存优化改进
+### 2. 配置驱动处理器架构
+
+**重构硬编码为配置驱动**:
+- **意图执行**: 从硬编码处理逻辑迁移到intent_handlers表配置
+- **响应生成**: 从静态模板迁移到response_templates表动态管理
+- **业务规则**: 通过intent_business_rules表支持企业级审批流程
+- **槽位依赖**: slot_dependencies表管理复杂的槽位填充逻辑
+
+### 3. 缓存优化改进
 
 1. **数据规范化缓存**：
    - 槽位信息从conversations表迁移到slot_values表
@@ -469,13 +567,13 @@ tail -f logs/app.log
    - 异步日志队列处理
    - cache_invalidation_logs表跟踪失效状态
 
-### 3. 多轮对话增强
+### 4. 多轮对话增强
 
 - **会话状态管理**: 完整的会话生命周期跟踪
 - **历史上下文推理**: 基于对话历史的智能决策
 - **槽位继承**: 跨轮次的槽位值累积和验证
 
-### 示例：槽位值缓存使用
+### 示例：配置驱动和缓存使用
 
 ```python
 # v2.2: 获取对话的所有已填充槽位 (替代conversations.slots_filled字段)
@@ -485,6 +583,14 @@ filled_slots = await cache_service.get_conversation_filled_slots(conversation_id
 # 缓存实体识别结果
 entity_result = await cache_service.lookup_entity("city", "北京")
 # 返回: {"entity_value": "北京", "canonical_form": "北京市", "aliases": ["北京", "京城"]}
+
+# 配置驱动处理器缓存
+handler_config = await cache_service.get_intent_handlers(intent_id)
+# 返回: {"handler_type": "mock_service", "handler_config": {...}, "fallback_config": {...}}
+
+# 动态响应模板缓存
+template = await cache_service.get_response_template(intent_id, "confirmation")
+# 返回: {"template_content": "请确认您的预订信息...", "template_variables": [...]}
 
 # v2.2修复：正确的缓存键生成方法
 cache_key = cache_service.get_cache_key('session', session_id=session_id)
